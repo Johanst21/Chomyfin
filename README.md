@@ -28,5 +28,9 @@ This version represents a stable, functional baseline prior to applying security
 *   Start Emby Server.
 *   Go to Emby Admin Dashboard > Plugins to verify and configure Chomyfin credentials and settings.
 
+## Release
+*   Chomyfin 0.8.7.0-beta (Prerelease)
+*   https://github.com/Johanst21/Chomyfin/releases/tag/v0.8.7.0-beta
+
 ## License
 *   Distributed under the project's software use license.
