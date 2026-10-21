@@ -29,7 +29,7 @@ This version represents a stable, functional baseline prior to applying security
 *   Go to Emby Admin Dashboard > Plugins to verify and configure Chomyfin credentials and settings.
 
 ## Release
-*   Chomyfin 0.8.7.0-beta (Prerelease)
+*   **Chomyfin 0.8.7.0-beta** (Pre-release)
 *   https://github.com/Johanst21/Chomyfin/releases/tag/v0.8.7.0-beta
 
 ## License
