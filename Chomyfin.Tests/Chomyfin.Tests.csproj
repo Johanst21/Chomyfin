@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Incluir directamente los archivos de lógica pura requeridos sin arrastrar el SDK de Emby -->
+    <Compile Include="..\Models\ChomikFileInfo.cs" Link="Models\ChomikFileInfo.cs" />
+    <Compile Include="..\Models\ChomikFolderInfo.cs" Link="Models\ChomikFolderInfo.cs" />
+    <Compile Include="..\Services\SoapLogSanitizer.cs" Link="Services\SoapLogSanitizer.cs" />
+    <Compile Include="..\Services\SoapResponseParser.cs" Link="Services\SoapResponseParser.cs" />
+    <Compile Include="..\Services\IChomikBoxClient.cs" Link="Services\IChomikBoxClient.cs" />
+  </ItemGroup>
+
+</Project>

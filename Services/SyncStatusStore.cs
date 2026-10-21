@@ -1,0 +1,82 @@
+using System;
+using System.Collections.Generic;
+using Chomyfin.Models;
+
+namespace Chomyfin.Services
+{
+    /// <summary>
+    /// Almacén en memoria seguro entre hilos para consultar el estado de
+    /// la última sincronización de archivos .strm y si hay una ejecución en curso.
+    /// </summary>
+    public class SyncStatusStore
+    {
+        private readonly object _syncLock = new object();
+
+        public bool IsRunning { get; private set; }
+        public DateTime? LastStartTimeUtc { get; private set; }
+        public DateTime? LastEndTimeUtc { get; private set; }
+        public bool? LastSuccess { get; private set; }
+        public string LastMessage { get; private set; }
+        public int FilesDiscovered { get; private set; }
+        public int FilesCreated { get; private set; }
+        public int FilesUpdated { get; private set; }
+        public int FilesSkipped { get; private set; }
+        public int FilesFailed { get; private set; }
+        public int OrphansDeleted { get; private set; }
+        public List<string> Errors { get; private set; } = new List<string>();
+
+        public void RecordStart()
+        {
+            lock (_syncLock)
+            {
+                IsRunning = true;
+                LastStartTimeUtc = DateTime.UtcNow;
+                LastMessage = "Sincronización en curso...";
+            }
+        }
+
+        public void RecordCompletion(StrmGeneratorResult result)
+        {
+            lock (_syncLock)
+            {
+                IsRunning = false;
+                LastEndTimeUtc = DateTime.UtcNow;
+                if (result != null)
+                {
+                    LastSuccess = result.Success;
+                    LastMessage = result.Message;
+                    FilesDiscovered = result.FilesDiscovered;
+                    FilesCreated = result.FilesCreated;
+                    FilesUpdated = result.FilesUpdated;
+                    FilesSkipped = result.FilesSkipped;
+                    FilesFailed = result.FilesFailed;
+                    OrphansDeleted = result.OrphansDeleted;
+                    Errors = new List<string>(result.Errors ?? new List<string>());
+                }
+            }
+        }
+
+        public string GetSummaryString()
+        {
+            lock (_syncLock)
+            {
+                if (IsRunning)
+                {
+                    var duration = LastStartTimeUtc.HasValue ? (DateTime.UtcNow - LastStartTimeUtc.Value).TotalSeconds : 0;
+                    return $"Sincronización en curso (hace {(int)duration}s)...";
+                }
+
+                if (!LastStartTimeUtc.HasValue)
+                {
+                    return "No se ha ejecutado ninguna sincronización aún.";
+                }
+
+                var statusText = LastSuccess == true ? "Completada" : "Con errores";
+                var localTime = (LastEndTimeUtc ?? LastStartTimeUtc.Value).ToLocalTime().ToString("g");
+
+                return $"{statusText} ({localTime}) - Creados: {FilesCreated}, Actualizados: {FilesUpdated}, Omitidos: {FilesSkipped}, Errores: {FilesFailed}" +
+                       (OrphansDeleted > 0 ? $", Huérfanos: {OrphansDeleted}" : "");
+            }
+        }
+    }
+}

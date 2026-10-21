@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- netstandard2.0: requisito obligatorio del portal de plugins de Emby.
+         Las DLL netstandard2.1 son rechazadas. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyVersion>0.8.7.0</AssemblyVersion>
+    <FileVersion>0.8.7.0</FileVersion>
+    <Version>0.8.7.0-beta</Version>
+    <InformationalVersion>0.8.7.0-beta</InformationalVersion>
+    <PackageTags>plugin</PackageTags>
+    <LangVersion>9.0</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Chomyfin.Tests\**" />
+    <None Remove="Chomyfin.Tests\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="ThumbImage.jpg" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="ThumbImage.jpg" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Referencia de compilación del SDK de Emby. Compilamos contra la beta
+         4.10.0.24-beta2 (la única disponible en NuGet para 4.10) para que la
+         API de plugins coincida EXACTAMENTE con el runtime 4.10.1.0: en 4.10
+         IMediaSourceProvider.OpenMediaSource ganó `string consumerId`, y
+         compilar contra 4.9 dejaba la firma vieja -> TypeLoadException.
+         netstandard2.0 sigue siendo el requisito del portal de plugins. -->
+    <PackageReference Include="mediabrowser.server.core" Version="4.10.0.24-beta2" />
+    <!-- System.Memory: MediaBrowser.Model 4.10 declara dependencia en System.Memory;
+         se fija 4.6.2 (floor satisfactorio) para que la compilación resuelva la
+         versión. En runtime Emby usa su propia copia del proceso, por lo que no hay
+         colisión real (solo es de compilación). -->
+    <PackageReference Include="System.Memory" Version="4.6.2" />
+    <!-- Sin System.Text.Json: los [JsonIgnore] se eliminaron (la plantilla
+         oficial del SDK de Emby sobreescribe EditorTitle/EditorDescription sin
+         ellos, siendo propiedades get-only de la base que Emby no persiste).
+         El plugin queda autocontenido en una sola Chomyfin.dll sin dependencias
+         .NET externas. -->
+  </ItemGroup>
+</Project>
