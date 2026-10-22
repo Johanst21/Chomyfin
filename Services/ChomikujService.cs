@@ -544,15 +544,18 @@ namespace Chomyfin
                         return Regex.Unescape(match.Groups[1].Value);
                     }
 
+                    var sanitizedContent = SoapLogSanitizer.Sanitize(content);
+                    var preview = sanitizedContent.Length > 250 ? sanitizedContent.Substring(0, 250) : sanitizedContent;
+
                     if (isFastPath)
                     {
                         _logger.Debug("Chomyfin: intento rápido sin redirectUrl para {0} (HTTP {1}). Contenido: {2}",
-                            pageUrl, (int)response.StatusCode, content.Length > 250 ? content.Substring(0, 250) : content);
+                            pageUrl, (int)response.StatusCode, preview);
                     }
                     else
                     {
                         _logger.Warn("Chomyfin: respuesta de descarga sin redirectUrl para {0} (HTTP {1}). Contenido: {2}",
-                            pageUrl, (int)response.StatusCode, content.Length > 250 ? content.Substring(0, 250) : content);
+                            pageUrl, (int)response.StatusCode, preview);
                     }
                 }
             }

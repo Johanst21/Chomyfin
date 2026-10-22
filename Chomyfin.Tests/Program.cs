@@ -42,6 +42,15 @@ namespace Chomyfin.Tests
             RunTest("4.3.3 Atributos sensibles, autocerrados, CDATA, entidades, multilinea", TestSanitizer_XmlVariations);
             RunTest("4.3.4 Texto no XML o XML truncado (fallback regex)", TestSanitizer_RegexFallback);
             RunTest("4.3.5 Sanitizar antes de truncar", TestSanitizer_SanitizeBeforeTruncate);
+            RunTest("4.3.6 Canario: XML truncado sin cierre", TestSanitizer_Canary_XmlTruncatedTag);
+            RunTest("4.3.7 Canario: passHash sin etiqueta de cierre", TestSanitizer_Canary_PassHashNoClose);
+            RunTest("4.3.8 Canario: JSON con Password y __RequestVerificationToken", TestSanitizer_Canary_JsonTokens);
+            RunTest("4.3.9 Canario: Query string en URL con token y password", TestSanitizer_Canary_QueryString);
+            RunTest("4.3.10 Canario: Form urlencoded Login y Password", TestSanitizer_Canary_FormUrlEncoded);
+            RunTest("4.3.11 Canario: Cabecera Cookie con rememberMe y ChomikSession", TestSanitizer_Canary_CookieHeader);
+            RunTest("4.3.12 Canario: Elemento password con booleano true se enmascara", TestSanitizer_Canary_PasswordBoolMasked);
+            RunTest("4.3.13 Canario: Atributo hasPassword con booleano true se preserva", TestSanitizer_Canary_HasPasswordPreserved);
+            RunTest("4.3.14 Resistencia DoS: 5 MB de '<' repetidos termina en < 2 s", TestSanitizer_5MB_LessThan2Seconds);
 
             // 4.4 Recorrido del escaneo con cliente falso
             RunTest("4.4.1 Recorrido: Raiz EmptyFolder y 2 subcarpetas con archivos", TestSync_RootEmpty_SubfoldersFiles);
@@ -380,6 +389,73 @@ namespace Chomyfin.Tests
 
             string truncated = sanitized.Length > 20 ? sanitized.Substring(0, 20) : sanitized;
             AssertTrue(!truncated.Contains("MiTokenSensible"), "El truncado posterior no expone nada");
+        }
+
+        static void TestSanitizer_Canary_XmlTruncatedTag()
+        {
+            string input = "<AuthResult><token>CANARY_9X</tok";
+            string sanitized = SoapLogSanitizer.Sanitize(input);
+            AssertTrue(!sanitized.Contains("CANARY_9X"), "XML truncado no debe contener CANARY_9X");
+        }
+
+        static void TestSanitizer_Canary_PassHashNoClose()
+        {
+            string input = "<passHash>CANARY_9X";
+            string sanitized = SoapLogSanitizer.Sanitize(input);
+            AssertTrue(!sanitized.Contains("CANARY_9X"), "passHash sin cierre no debe contener CANARY_9X");
+        }
+
+        static void TestSanitizer_Canary_JsonTokens()
+        {
+            string input = "{\"Password\":\"CANARY_9X\",\"__RequestVerificationToken\":\"CANARY_9X\"}";
+            string sanitized = SoapLogSanitizer.Sanitize(input);
+            AssertTrue(!sanitized.Contains("CANARY_9X"), "JSON no debe contener CANARY_9X");
+        }
+
+        static void TestSanitizer_Canary_QueryString()
+        {
+            string input = "https://x/y?token=CANARY_9X&password=CANARY_9X";
+            string sanitized = SoapLogSanitizer.Sanitize(input);
+            AssertTrue(!sanitized.Contains("CANARY_9X"), "Query string no debe contener CANARY_9X");
+        }
+
+        static void TestSanitizer_Canary_FormUrlEncoded()
+        {
+            string input = "Login=u&Password=CANARY_9X";
+            string sanitized = SoapLogSanitizer.Sanitize(input);
+            AssertTrue(!sanitized.Contains("CANARY_9X"), "Form urlencoded no debe contener CANARY_9X");
+        }
+
+        static void TestSanitizer_Canary_CookieHeader()
+        {
+            string input = "Cookie: rememberMe=CANARY_9X; ChomikSession=CANARY_9X";
+            string sanitized = SoapLogSanitizer.Sanitize(input);
+            AssertTrue(!sanitized.Contains("CANARY_9X"), "Cabecera Cookie no debe contener CANARY_9X");
+        }
+
+        static void TestSanitizer_Canary_PasswordBoolMasked()
+        {
+            string input = "<a><password>true</password></a>";
+            string sanitized = SoapLogSanitizer.Sanitize(input);
+            AssertTrue(!sanitized.Contains("true"), "password con booleano true debe ser enmascarado");
+        }
+
+        static void TestSanitizer_Canary_HasPasswordPreserved()
+        {
+            string input = "<a hasPassword=\"true\"/>";
+            string sanitized = SoapLogSanitizer.Sanitize(input);
+            AssertTrue(sanitized.Contains("hasPassword=\"true\""), "hasPassword con booleano true debe ser preservado");
+        }
+
+        static void TestSanitizer_5MB_LessThan2Seconds()
+        {
+            string hugeInput = new string('<', 5 * 1024 * 1024);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            string sanitized = SoapLogSanitizer.Sanitize(hugeInput);
+            sw.Stop();
+            Console.WriteLine($"[INFO] TestSanitizer_5MB_LessThan2Seconds procesado en {sw.ElapsedMilliseconds} ms");
+            AssertTrue(sw.ElapsedMilliseconds < 2000, $"Entrada de 5 MB debe procesarse en < 2000 ms (tomó {sw.ElapsedMilliseconds} ms)");
+            AssertTrue(sanitized != null, "La sanitización no debe ser nula ni lanzar excepción");
         }
 
         #endregion
