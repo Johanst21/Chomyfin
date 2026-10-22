@@ -4,21 +4,25 @@ using System.Threading.Tasks;
 using Chomyfin.Models;
 using Chomyfin.Services;
 using MediaBrowser.Controller.Api;
+using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Services;
 
 namespace Chomyfin.Api
 {
+    [Authenticated(Roles = "Admin")]
     [Route("/Chomyfin/Sync/Run", "POST", Summary = "Inicia la sincronización de archivos .strm en segundo plano")]
     public class RunSyncRequest : IReturn<SyncActionResult>
     {
     }
 
+    [Authenticated(Roles = "Admin")]
     [Route("/Chomyfin/Sync/Status", "GET", Summary = "Obtiene el estado de la sincronización de archivos .strm")]
     public class GetSyncStatusRequest : IReturn<SyncStatusResponse>
     {
     }
 
+    [Authenticated(Roles = "Admin")]
     [Route("/Chomyfin/TestConnection", "POST", Summary = "Prueba la conexión y autenticación con Chomikuj")]
     public class TestConnectionRequest : IReturn<TestConnectionResult>
     {
