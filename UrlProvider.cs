@@ -130,14 +130,9 @@ namespace Chomyfin
             };
 
             var service = ChomyfinServices.ChomikujService;
-            if (service != null)
+            if (service != null && !string.IsNullOrEmpty(service.UserAgent))
             {
-                var cookies = service.GetCookies();
-                if (cookies.Any())
-                {
-                    source.RequiredHttpHeaders["Cookie"] = string.Join("; ", cookies);
-                    source.RequiredHttpHeaders["User-Agent"] = service.UserAgent;
-                }
+                source.RequiredHttpHeaders["User-Agent"] = service.UserAgent;
             }
 
             return new List<MediaSourceInfo> { source };
