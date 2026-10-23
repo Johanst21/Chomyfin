@@ -90,6 +90,11 @@ namespace Chomyfin.Tests
             RunTest("9.5 P1-9: Test negativo: si falla .original (directorio solo lectura), .strm conserva su contenido anterior", TestP1_9_Negative_OriginalFails_StrmPreserved);
             RunTest("9.6 P1-9: MaybeCleanupLocks: >50 entradas, purga retira RefCount==0 y NO retira hilos en WaitAsync", TestP1_9_MaybeCleanupLocks_RetainsActiveWaiters);
 
+            // 10. Pruebas P1-6 (StrmSyncTask)
+            RunTest("10.1 P1-6 Test a: Cancelación -> OperationCanceledException relanzada, statusStore y logger actualizados, libraryMonitor no invocado", TestP1_6_Cancellation_ThrowsAndUpdatesStatus);
+            RunTest("10.2 P1-6 Test b: Excepción no-cancelatoria -> catch(Exception) atrapa, IsRunning=false, LastSuccess=false, libraryMonitor no invocado", TestP1_6_NonCancellationException_CaughtAndUpdatesStatus);
+            RunTest("10.3 P1-6 Test c: Flujo normal exitoso -> result.Success=true, IsRunning=false, LastSuccess=true, libraryMonitor recibe ReportFileSystemChanged", TestP1_6_Success_InvokesLibraryMonitor);
+
             Console.WriteLine("\n===========================================");
             Console.WriteLine($"TOTAL PRUEBAS: {_passed + _failed} | PASADAS: {_passed} | FALLADAS: {_failed}");
             Console.WriteLine("===========================================");
@@ -1514,6 +1519,187 @@ namespace Chomyfin.Tests
             }
         }
 
+        #region 10. Pruebas P1-6 (StrmSyncTask)
+
+        class FakeLogManagerProxy : System.Reflection.DispatchProxy
+        {
+            public TestLogger LoggerInstance { get; set; }
+
+            protected override object Invoke(System.Reflection.MethodInfo targetMethod, object[] args)
+            {
+                if (targetMethod.Name == "GetLogger")
+                {
+                    return LoggerInstance;
+                }
+                return null;
+            }
+
+            public static MediaBrowser.Model.Logging.ILogManager Create(TestLogger logger)
+            {
+                var proxy = System.Reflection.DispatchProxy.Create<MediaBrowser.Model.Logging.ILogManager, FakeLogManagerProxy>();
+                ((FakeLogManagerProxy)(object)proxy).LoggerInstance = logger;
+                return proxy;
+            }
+        }
+
+        class FakeLibraryMonitorProxy : System.Reflection.DispatchProxy
+        {
+            public List<string> ReportedPaths { get; } = new List<string>();
+
+            protected override object Invoke(System.Reflection.MethodInfo targetMethod, object[] args)
+            {
+                if (targetMethod.Name == "ReportFileSystemChanged" && args != null && args.Length > 0)
+                {
+                    ReportedPaths.Add((string)args[0]);
+                }
+                return null;
+            }
+
+            public static (MediaBrowser.Controller.Library.ILibraryMonitor monitor, List<string> reportedPaths) Create()
+            {
+                var proxy = System.Reflection.DispatchProxy.Create<MediaBrowser.Controller.Library.ILibraryMonitor, FakeLibraryMonitorProxy>();
+                return (proxy, ((FakeLibraryMonitorProxy)(object)proxy).ReportedPaths);
+            }
+        }
+
+        static void TestP1_6_Cancellation_ThrowsAndUpdatesStatus()
+        {
+            var logger = new TestLogger();
+            var logManager = FakeLogManagerProxy.Create(logger);
+            var (libMonitor, reportedPaths) = FakeLibraryMonitorProxy.Create();
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p16_1_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                StrmDestinationFolder = tempDir,
+                RefreshLibraryAfterSync = true
+            };
+
+            ChomyfinServices.Initialize(logger, () => options, null);
+            try
+            {
+                var cts = new CancellationTokenSource();
+                cts.Cancel(); // Token ya cancelado
+
+                var task = new ScheduledTasks.StrmSyncTask(libMonitor, logManager, l => new StrmGenerator(l, opt => new FakeChomikBoxClient()));
+
+                bool threwExpected = false;
+                try
+                {
+                    task.Execute(cts.Token, null).GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                    threwExpected = true;
+                }
+
+                AssertTrue(threwExpected, "OperationCanceledException llega al llamador");
+                AssertTrue(logger.Logs.Any(log => log.Contains("Chomyfin: Sincronización cancelada.")), "Log contiene 'Chomyfin: Sincronización cancelada.'");
+                AssertFalse(ChomyfinServices.SyncStatusStore.IsRunning, "SyncStatusStore.IsRunning es false");
+                AssertEqual(false, ChomyfinServices.SyncStatusStore.LastSuccess, "LastSuccess es false");
+                AssertEqual("Sincronización cancelada.", ChomyfinServices.SyncStatusStore.LastMessage, "LastMessage es 'Sincronización cancelada.'");
+                AssertEqual(0, ChomyfinServices.SyncStatusStore.Errors.Count, "result.Errors está vacío");
+                AssertEqual(0, reportedPaths.Count, "ILibraryMonitor NO recibe llamada");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+                ChomyfinServices.ResetForTests();
+            }
+        }
+
+        static void TestP1_6_NonCancellationException_CaughtAndUpdatesStatus()
+        {
+            var logger = new TestLogger();
+            var logManager = FakeLogManagerProxy.Create(logger);
+            var (libMonitor, reportedPaths) = FakeLibraryMonitorProxy.Create();
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p16_2_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                StrmDestinationFolder = tempDir,
+                RefreshLibraryAfterSync = true
+            };
+
+            ChomyfinServices.Initialize(logger, () => options, null);
+            try
+            {
+                // Generador que lanza InvalidOperationException a través del clientFactory
+                var task = new ScheduledTasks.StrmSyncTask(libMonitor, logManager, l => new StrmGenerator(l, opt =>
+                {
+                    throw new InvalidOperationException("Fallo inducido en generator mock");
+                }));
+
+                // Execute NO debe relanzar InvalidOperationException (catch(Exception) la atrapa)
+                task.Execute(CancellationToken.None, null).GetAwaiter().GetResult();
+
+                AssertTrue(logger.Logs.Any(log => log.Contains("Chomyfin: Error inesperado durante la ejecución de StrmSyncTask") && log.Contains("Fallo inducido en generator mock")), "_logger.ErrorException invocado con el error");
+                AssertFalse(ChomyfinServices.SyncStatusStore.IsRunning, "SyncStatusStore.IsRunning es false");
+                AssertEqual(false, ChomyfinServices.SyncStatusStore.LastSuccess, "LastSuccess es false");
+                AssertEqual(0, reportedPaths.Count, "ILibraryMonitor NO recibe llamada");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+                ChomyfinServices.ResetForTests();
+            }
+        }
+
+        static void TestP1_6_Success_InvokesLibraryMonitor()
+        {
+            var logger = new TestLogger();
+            var logManager = FakeLogManagerProxy.Create(logger);
+            var (libMonitor, reportedPaths) = FakeLibraryMonitorProxy.Create();
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p16_3_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                StrmDestinationFolder = tempDir,
+                RefreshLibraryAfterSync = true,
+                SyncMode = StrmSyncMode.FullAccount
+            };
+
+            ChomyfinServices.Initialize(logger, () => options, null);
+            try
+            {
+                var fakeClient = new FakeChomikBoxClient
+                {
+                    OnGetSubfolders = (id, path) => new List<ChomikFolderInfo>(),
+                    OnGetFilesInFolder = (id, path) => FolderFilesResult.CreateFiles(new List<ChomikFileInfo>
+                    {
+                        new ChomikFileInfo("555", "peli.mkv", "/peli.mkv", 100)
+                    })
+                };
+
+                var task = new ScheduledTasks.StrmSyncTask(libMonitor, logManager, l => new StrmGenerator(l, opt => fakeClient));
+
+                task.Execute(CancellationToken.None, null).GetAwaiter().GetResult();
+
+                AssertFalse(ChomyfinServices.SyncStatusStore.IsRunning, "SyncStatusStore.IsRunning es false");
+                AssertEqual(true, ChomyfinServices.SyncStatusStore.LastSuccess, "LastSuccess es true");
+                AssertEqual(1, reportedPaths.Count, "ILibraryMonitor recibe exactamente 1 llamada");
+                AssertEqual(tempDir, reportedPaths[0], "ILibraryMonitor recibe destPath correcto");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+                ChomyfinServices.ResetForTests();
+            }
+        }
+
+        #endregion
         #endregion
         #endregion
     }

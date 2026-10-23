@@ -100,6 +100,17 @@ namespace Chomyfin.ScheduledTasks
             {
                 result = await generator.GenerateAsync(genOptions, progress, cancellationToken).ConfigureAwait(false);
             }
+            catch (OperationCanceledException)
+            {
+                result = new StrmGeneratorResult
+                {
+                    Success = false,
+                    Message = "Sincronización cancelada.",
+                    EndTime = DateTime.UtcNow
+                };
+                _logger.Info("Chomyfin: Sincronización cancelada.");
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.ErrorException("Chomyfin: Error inesperado durante la ejecución de StrmSyncTask", ex);
