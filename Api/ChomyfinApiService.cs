@@ -120,7 +120,8 @@ namespace Chomyfin.Api
                     AllowedExtensions = options.GetAllowedVideoExtensionsList(),
                     OverwritePolicy = options.OverwritePolicy,
                     DeleteOrphans = options.DeleteOrphans,
-                EnableSoapDiagnostics = options.EnableSoapDiagnostics,
+                    OrphansDryRun = options.OrphansDryRun,
+                    EnableSoapDiagnostics = options.EnableSoapDiagnostics,
                 DiagnosticsDirectory = ChomyfinServices.PluginDataPath != null ? System.IO.Path.Combine(ChomyfinServices.PluginDataPath, "diag") : null
                 };
 

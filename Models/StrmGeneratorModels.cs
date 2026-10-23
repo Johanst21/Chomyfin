@@ -28,6 +28,7 @@ namespace Chomyfin.Models
         };
         public StrmOverwritePolicy OverwritePolicy { get; set; } = StrmOverwritePolicy.SkipIfExists;
         public bool DeleteOrphans { get; set; } = false;
+        public bool OrphansDryRun { get; set; } = true;
         public int DelayBetweenRequestsMs { get; set; } = 150;
         public bool EnableSoapDiagnostics { get; set; } = false;
         public string DiagnosticsDirectory { get; set; }

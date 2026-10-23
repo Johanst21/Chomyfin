@@ -10,6 +10,7 @@
 - [VERIFICAR] del plan punto 6: clientFactory inyectable (SÍ existe en StrmGenerator) y FakeChomikBoxClient (SÍ existe en Program.cs:465-490).
 - Gap: Chomyfin.Tests.csproj solo compila SoapLogSanitizer, SoapResponseParser, IChomikBoxClient, ChomikFileInfo, ChomikFolderInfo. NO compila StrmGenerator.cs, StrmGeneratorModels.cs ni ChomyfinOptions.cs, ni referencia mediabrowser.server.core / MediaBrowser.Model.
 - Consecuencia: los 4 tests de aceptación de P0-4 no se pueden ejecutar hasta ampliar el .csproj.
-- Estado: F3 detenido. P0-4 NO commiteado. Sin cambios pendientes en el working tree de producción (verifica con git status que solo NOTAS_AGENTE.md está modificado, y confírmalo en el reporte).
+- Estado: F3 desbloqueado mediante commit 1 (1c3ad15).
+- Verificación necesidad ChomikBoxClient.cs en Chomyfin.Tests.csproj: SÍ es estrictamente necesario porque StrmGenerator.cs referencia directamente `ChomikBoxClient` en línea 23 (`new ChomikBoxClient(...)` como fallback en constructor) y en línea 202 (`ChomikBoxClient.EscapePathId(rawPath)`). Si se retira de Compile Include, el compilador falla con CS0019 y CS0103. Se mantiene en Chomyfin.Tests.csproj.
 
 

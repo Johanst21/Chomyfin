@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Chomyfin.Models;
@@ -128,10 +129,12 @@ namespace Chomyfin.Services
 
                     // 1. Determinar carpetas raíz de inicio
                     var foldersToScan = new Queue<ChomikFolderInfo>();
+                    var scannedRoots = new List<string>();
 
                     if (options.SyncMode == StrmSyncMode.FullAccount)
                     {
                         foldersToScan.Enqueue(new ChomikFolderInfo(0, "Root", "/"));
+                        scannedRoots.Add(fullDestinationPath);
                     }
                     else
                     {
@@ -157,6 +160,7 @@ namespace Chomyfin.Services
                             if (targetPath == "/")
                             {
                                 foldersToScan.Enqueue(new ChomikFolderInfo(0, "Root", "/"));
+                                scannedRoots.Add(fullDestinationPath);
                                 continue;
                             }
 
@@ -164,6 +168,14 @@ namespace Chomyfin.Services
                             if (resolvedFolder != null)
                             {
                                 foldersToScan.Enqueue(resolvedFolder);
+                                var pathSegments = (resolvedFolder.Path ?? string.Empty)
+                                    .Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(SanitizePathSegment)
+                                    .ToArray();
+                                var resolvedLocalRoot = pathSegments.Length > 0
+                                    ? Path.Combine(fullDestinationPath, Path.Combine(pathSegments))
+                                    : fullDestinationPath;
+                                scannedRoots.Add(resolvedLocalRoot);
                             }
                             else
                             {
@@ -374,14 +386,25 @@ namespace Chomyfin.Services
                     }
 
                     // 3. Generación de archivos .strm
+                    var fileAssignments = AssignStrmFileNames(discoveredFiles, fullDestinationPath, _logger);
+
                     for (int i = 0; i < discoveredFiles.Count; i++)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var file = discoveredFiles[i];
+                        var (safeRelativeDir, assignedStrmName) = fileAssignments[file];
 
                         try
                         {
-                            var processStatus = ProcessFileStrm(options.Username, file, fullDestinationPath, options.OverwritePolicy, generatedStrmFiles);
+                            var processStatus = ProcessFileStrm(
+                                options.Username,
+                                file,
+                                safeRelativeDir,
+                                assignedStrmName,
+                                fullDestinationPath,
+                                options.OverwritePolicy,
+                                generatedStrmFiles);
+
                             switch (processStatus)
                             {
                                 case FileProcessStatus.Created:
@@ -419,7 +442,12 @@ namespace Chomyfin.Services
                     {
                         try
                         {
-                            result.OrphansDeleted = CleanOrphans(fullDestinationPath, generatedStrmFiles);
+                            result.OrphansDeleted = CleanOrphans(
+                                fullDestinationPath,
+                                generatedStrmFiles,
+                                scannedRoots,
+                                options.OrphansDryRun,
+                                _logger);
                         }
                         catch (Exception ex)
                         {
@@ -481,32 +509,170 @@ namespace Chomyfin.Services
             return lastMatched;
         }
 
+        private static readonly Regex FileIdFromUrlRegex = new Regex(@",(\d+)(?:\.[A-Za-z0-9]+)?(?:\?|$)", RegexOptions.Compiled);
+
+        internal static Dictionary<ChomikFileInfo, (string SafeRelativeDir, string AssignedStrmName)> AssignStrmFileNames(
+            List<ChomikFileInfo> discoveredFiles,
+            string destinationRoot,
+            ILogger logger)
+        {
+            var result = new Dictionary<ChomikFileInfo, (string SafeRelativeDir, string AssignedStrmName)>();
+            if (discoveredFiles == null || discoveredFiles.Count == 0)
+            {
+                return result;
+            }
+
+            // 1. Pre-pasada sobre discoveredFiles: agrupar por ruta final calculada
+            // (carpeta saneada + nombre base saneado, comparación insensible a mayúsculas)
+            var groups = new Dictionary<string, List<ChomikFileInfo>>(StringComparer.OrdinalIgnoreCase);
+            var fileDirMap = new Dictionary<ChomikFileInfo, string>();
+            var fileBaseMap = new Dictionary<ChomikFileInfo, string>();
+
+            foreach (var file in discoveredFiles)
+            {
+                var relativePath = (file.Path ?? string.Empty).TrimStart('/');
+                var relativeDir = Path.GetDirectoryName(relativePath) ?? string.Empty;
+                var fileNameWithoutExt = Path.GetFileNameWithoutExtension(file.Name ?? string.Empty);
+
+                var dirParts = relativeDir.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(SanitizePathSegment)
+                    .ToArray();
+
+                var safeRelativeDir = Path.Combine(dirParts);
+                var safeBaseName = SanitizePathSegment(fileNameWithoutExt);
+
+                fileDirMap[file] = safeRelativeDir;
+                fileBaseMap[file] = safeBaseName;
+
+                var groupKey = Path.Combine(safeRelativeDir, safeBaseName);
+                if (!groups.TryGetValue(groupKey, out var list))
+                {
+                    list = new List<ChomikFileInfo>();
+                    groups[groupKey] = list;
+                }
+                list.Add(file);
+            }
+
+            foreach (var kvp in groups)
+            {
+                var groupKey = kvp.Key;
+                var members = kvp.Value;
+
+                if (members.Count == 1)
+                {
+                    var file = members[0];
+                    result[file] = (fileDirMap[file], fileBaseMap[file]);
+                    continue;
+                }
+
+                // Grupos con >1 miembro = colisión.
+                // 2. Elegir el PROPIETARIO del nombre base dentro de cada grupo:
+                var safeDir = fileDirMap[members[0]];
+                var safeBase = fileBaseMap[members[0]];
+                var targetDirectory = Path.Combine(destinationRoot, safeDir);
+
+                var fullStrmPath = Path.Combine(targetDirectory, safeBase + ".strm");
+                var originalPath = Path.Combine(targetDirectory, safeBase + ".original");
+
+                ChomikFileInfo owner = null;
+                string existingUrl = null;
+
+                if (File.Exists(originalPath))
+                {
+                    try
+                    {
+                        existingUrl = File.ReadAllText(originalPath, Encoding.UTF8)?.Trim();
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.Debug("[StrmGenerator] Error leyendo {0}: {1}", originalPath, ex.ToString());
+                    }
+                }
+                else if (File.Exists(fullStrmPath))
+                {
+                    try
+                    {
+                        existingUrl = File.ReadAllText(fullStrmPath, Encoding.UTF8)?.Trim();
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.Debug("[StrmGenerator] Error leyendo {0}: {1}", fullStrmPath, ex.ToString());
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(existingUrl))
+                {
+                    var match = FileIdFromUrlRegex.Match(existingUrl);
+                    if (match.Success)
+                    {
+                        var matchedId = match.Groups[1].Value;
+                        owner = members.FirstOrDefault(m => string.Equals(m.Id, matchedId, StringComparison.OrdinalIgnoreCase));
+                    }
+                }
+
+                if (owner == null)
+                {
+                    // No se pudo determinar: el propietario es el miembro de menor Id numérico; registrar un Warn
+                    owner = members
+                        .OrderBy(m =>
+                        {
+                            if (long.TryParse(m.Id, out var parsedId)) return parsedId;
+                            return long.MaxValue;
+                        })
+                        .ThenBy(m => m.Id, StringComparer.OrdinalIgnoreCase)
+                        .First();
+
+                    logger?.Warn("[StrmGenerator] Colisión de nombre detectada en carpeta '{0}', archivo base '{1}'. Propietario asignado por menor Id: Id={2}",
+                        safeDir, safeBase, owner.Id);
+                }
+
+                result[owner] = (safeDir, safeBase);
+
+                // 3. Los demás miembros usan el nombre {base} [{ext sin punto}] (p.ej. Peli [mp4]). Si aún colisionan entre sí, añadir -{Id}.
+                var nonOwners = members.Where(m => !ReferenceEquals(m, owner)).ToList();
+                var subGroups = nonOwners.GroupBy(m =>
+                {
+                    var ext = (Path.GetExtension(m.Name ?? string.Empty) ?? string.Empty).TrimStart('.');
+                    return $"{safeBase} [{ext}]";
+                }, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var subGroup in subGroups)
+                {
+                    var subList = subGroup.ToList();
+                    if (subList.Count == 1)
+                    {
+                        result[subList[0]] = (safeDir, subGroup.Key);
+                    }
+                    else
+                    {
+                        foreach (var item in subList)
+                        {
+                            result[item] = (safeDir, $"{subGroup.Key}-{item.Id}");
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
         private FileProcessStatus ProcessFileStrm(
             string username,
             ChomikFileInfo file,
+            string safeRelativeDir,
+            string assignedStrmFileName,
             string destinationRoot,
             StrmOverwritePolicy policy,
             HashSet<string> generatedStrmFiles)
         {
-            var relativePath = file.Path.TrimStart('/');
-            var relativeDir = Path.GetDirectoryName(relativePath) ?? string.Empty;
-            var fileNameWithoutExt = Path.GetFileNameWithoutExtension(file.Name);
-
-            var dirParts = relativeDir.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(SanitizePathSegment)
-                .ToArray();
-
-            var safeRelativeDir = Path.Combine(dirParts);
-            var safeFileName = SanitizePathSegment(fileNameWithoutExt);
-
             var targetDirectory = Path.Combine(destinationRoot, safeRelativeDir);
             if (!Directory.Exists(targetDirectory))
             {
                 Directory.CreateDirectory(targetDirectory);
             }
 
-            var fullStrmPath = Path.Combine(targetDirectory, safeFileName + ".strm");
-            var originalPath = Path.Combine(targetDirectory, safeFileName + ".original");
+            var fullStrmPath = Path.Combine(targetDirectory, assignedStrmFileName + ".strm");
+            var originalPath = Path.Combine(targetDirectory, assignedStrmFileName + ".original");
 
             generatedStrmFiles.Add(Path.GetFullPath(fullStrmPath));
 
@@ -611,44 +777,119 @@ namespace Chomyfin.Services
             return sb.ToString().Trim(' ', '.');
         }
 
-        private static int CleanOrphans(string destinationPath, HashSet<string> validStrmFiles)
+        private static int CleanOrphans(
+            string destinationPath,
+            HashSet<string> validStrmFiles,
+            List<string> scannedRoots,
+            bool orphansDryRun,
+            ILogger logger)
         {
+            if (scannedRoots == null || scannedRoots.Count == 0)
+            {
+                return 0;
+            }
+
+            var normalizedRoots = scannedRoots
+                .Where(r => !string.IsNullOrEmpty(r))
+                .Select(r =>
+                {
+                    var full = Path.GetFullPath(r);
+                    return full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                })
+                .ToList();
+
+            if (normalizedRoots.Count == 0)
+            {
+                return 0;
+            }
+
             int deletedCount = 0;
+            var filesToDelete = new List<string>();
             var allStrms = Directory.GetFiles(destinationPath, "*.strm", SearchOption.AllDirectories);
 
             foreach (var strm in allStrms)
             {
                 var fullPath = Path.GetFullPath(strm);
+
+                bool withinScannedRoots = false;
+                for (int i = 0; i < normalizedRoots.Count; i++)
+                {
+                    if (fullPath.StartsWith(normalizedRoots[i], StringComparison.OrdinalIgnoreCase))
+                    {
+                        withinScannedRoots = true;
+                        break;
+                    }
+                }
+
+                if (!withinScannedRoots)
+                {
+                    continue;
+                }
+
                 if (!validStrmFiles.Contains(fullPath))
                 {
-                    try
-                    {
-                        File.Delete(fullPath);
-                        deletedCount++;
-                        var origPath = Path.ChangeExtension(fullPath, ".original");
-                        if (File.Exists(origPath))
-                        {
-                            File.Delete(origPath);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        // No tragar silenciosamente
-                        Console.WriteLine($"Error limpiando {fullPath}: {ex}");
-                    }
+                    filesToDelete.Add(fullPath);
                 }
             }
 
-            CleanEmptyDirectories(destinationPath);
+            if (orphansDryRun)
+            {
+                logger?.Info("[ORPHANS-DRYRUN] Se eliminarían {0} .strm", filesToDelete.Count);
+                for (int i = 0; i < filesToDelete.Count && i < 50; i++)
+                {
+                    logger?.Info("[ORPHANS-DRYRUN] {0}", filesToDelete[i]);
+                }
+                return 0;
+            }
+
+            foreach (var fullPath in filesToDelete)
+            {
+                try
+                {
+                    File.Delete(fullPath);
+                    deletedCount++;
+                    var origPath = Path.ChangeExtension(fullPath, ".original");
+                    if (File.Exists(origPath))
+                    {
+                        File.Delete(origPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // No tragar silenciosamente
+                    Console.WriteLine($"Error limpiando {fullPath}: {ex}");
+                }
+            }
+
+            var destFullPath = Path.GetFullPath(destinationPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var preservedRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { destFullPath };
+            foreach (var r in scannedRoots)
+            {
+                preservedRoots.Add(Path.GetFullPath(r).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            }
+
+            foreach (var root in scannedRoots)
+            {
+                if (Directory.Exists(root))
+                {
+                    CleanEmptyDirectories(root, preservedRoots);
+                }
+            }
 
             return deletedCount;
         }
 
-        private static void CleanEmptyDirectories(string path)
+        private static void CleanEmptyDirectories(string path, HashSet<string> preservedRoots)
         {
             foreach (var directory in Directory.GetDirectories(path))
             {
-                CleanEmptyDirectories(directory);
+                CleanEmptyDirectories(directory, preservedRoots);
+                var fullDir = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (preservedRoots.Contains(fullDir))
+                {
+                    continue;
+                }
+
                 if (Directory.GetFiles(directory).Length == 0 && Directory.GetDirectories(directory).Length == 0)
                 {
                     try { Directory.Delete(directory, false); } catch { }

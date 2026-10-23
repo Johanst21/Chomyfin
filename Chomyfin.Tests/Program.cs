@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -69,6 +70,12 @@ namespace Chomyfin.Tests
             RunTest("6.1 MediaSourceName extrae nombre de archivo sin extension", TestMediaSourceName_ExtractsCleanFileName);
             RunTest("6.2 MediaSourceName maneja separadores Windows y Linux", TestMediaSourceName_WindowsAndLinuxPaths);
             RunTest("6.3 MediaSourceName devuelve null si ruta nula o vacia", TestMediaSourceName_NullOrEmptyPath);
+
+            // 7. Pruebas de aceptación P0-4 (a-d)
+            RunTest("7.1 P0-4 Test a: SelectedFolders escaneando solo B con DeleteOrphans=true y DryRun=false -> A/keep.strm se preserva y B/old.strm se elimina", TestAcceptance_P04_TestA);
+            RunTest("7.2 P0-4 Test b: Con OrphansDryRun=true -> ningún fichero se elimina y el log contiene [ORPHANS-DRYRUN] Se eliminarían 1 .strm", TestAcceptance_P04_TestB);
+            RunTest("7.3 P0-4 Test c: Colisión remota Peli.mkv y Peli.mp4 sin ficheros previos -> Peli.strm (Id 111) y Peli [mp4].strm, 2da ejecucion 0 actualizados", TestAcceptance_P04_TestC);
+            RunTest("7.4 P0-4 Test d: Existe Peli.strm apuntando a Id 222 -> Peli.strm preservado para 222 y Peli.mkv pasa a Peli [mkv].strm sin mover ficheros", TestAcceptance_P04_TestD);
 
             Console.WriteLine("\n===========================================");
             Console.WriteLine($"TOTAL PRUEBAS: {_passed + _failed} | PASADAS: {_passed} | FALLADAS: {_failed}");
@@ -700,6 +707,343 @@ namespace Chomyfin.Tests
         }
 
         #endregion
+
+        #endregion
+
+        #region 7. Acceptance Tests P0-4 (a-d)
+
+        class TestLogger : MediaBrowser.Model.Logging.ILogger
+        {
+            public List<string> Logs = new List<string>();
+
+            public void Info(string message, params object[] paramList)
+            {
+                var formatted = paramList != null && paramList.Length > 0 ? string.Format(message, paramList) : message;
+                Logs.Add(formatted);
+            }
+
+            public void Info(ReadOnlyMemory<char> message)
+            {
+                Logs.Add(message.ToString());
+            }
+
+            public void Error(string message, params object[] paramList)
+            {
+                var formatted = paramList != null && paramList.Length > 0 ? string.Format(message, paramList) : message;
+                Logs.Add(formatted);
+            }
+
+            public void Error(ReadOnlyMemory<char> message)
+            {
+                Logs.Add(message.ToString());
+            }
+
+            public void Warn(string message, params object[] paramList)
+            {
+                var formatted = paramList != null && paramList.Length > 0 ? string.Format(message, paramList) : message;
+                Logs.Add(formatted);
+            }
+
+            public void Warn(ReadOnlyMemory<char> message)
+            {
+                Logs.Add(message.ToString());
+            }
+
+            public void Debug(string message, params object[] paramList)
+            {
+                var formatted = paramList != null && paramList.Length > 0 ? string.Format(message, paramList) : message;
+                Logs.Add(formatted);
+            }
+
+            public void Debug(ReadOnlyMemory<char> message)
+            {
+                Logs.Add(message.ToString());
+            }
+
+            public void Fatal(string message, params object[] paramList)
+            {
+                var formatted = paramList != null && paramList.Length > 0 ? string.Format(message, paramList) : message;
+                Logs.Add(formatted);
+            }
+
+            public void FatalException(string message, Exception exception, params object[] paramList)
+            {
+                Logs.Add(message + ": " + exception?.Message);
+            }
+
+            public void ErrorException(string message, Exception exception, params object[] paramList)
+            {
+                Logs.Add(message + ": " + exception?.Message);
+            }
+
+            public void Log(MediaBrowser.Model.Logging.LogSeverity severity, string message, params object[] paramList)
+            {
+                var formatted = paramList != null && paramList.Length > 0 ? string.Format(message, paramList) : message;
+                Logs.Add(formatted);
+            }
+
+            public void Log(MediaBrowser.Model.Logging.LogSeverity severity, ReadOnlyMemory<char> message)
+            {
+                Logs.Add(message.ToString());
+            }
+
+            public void LogMultiline(string message, MediaBrowser.Model.Logging.LogSeverity severity, StringBuilder additionalContent)
+            {
+                Logs.Add(message);
+            }
+        }
+
+        static void TestAcceptance_P04_TestA()
+        {
+            // a) Destino con A/keep.strm (fuera de alcance) y B/old.strm (huérfano).
+            // Modo SelectedFolders escaneando solo B, DeleteOrphans=true, OrphansDryRun=false
+            // -> A/keep.strm SIGUE EXISTIENDO; B/old.strm se elimina.
+            var tempDir = Path.Combine(Path.GetTempPath(), "chomyfin_test_a_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(tempDir, "A"));
+            Directory.CreateDirectory(Path.Combine(tempDir, "B"));
+
+            var keepPath = Path.Combine(tempDir, "A", "keep.strm");
+            var oldPath = Path.Combine(tempDir, "B", "old.strm");
+            File.WriteAllText(keepPath, "https://chomikuj.pl/user/A/keep,999.strm");
+            File.WriteAllText(oldPath, "https://chomikuj.pl/user/B/old,888.strm");
+
+            var testLogger = new TestLogger();
+            var fakeClient = new FakeChomikBoxClient
+            {
+                OnGetSubfolders = (parentId, path) =>
+                {
+                    if (parentId == 0)
+                    {
+                        return new List<ChomikFolderInfo> { new ChomikFolderInfo(2, "B", "/B") };
+                    }
+                    return new List<ChomikFolderInfo>();
+                },
+                OnGetFilesInFolder = (folderId, path) =>
+                {
+                    if (folderId == 2)
+                    {
+                        return FolderFilesResult.CreateFiles(new List<ChomikFileInfo>
+                        {
+                            new ChomikFileInfo("201", "newfile.mkv", "/B/newfile.mkv", 100)
+                        });
+                    }
+                    return FolderFilesResult.CreateEmpty();
+                }
+            };
+
+            var options = new StrmGeneratorOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                DestinationPath = tempDir,
+                SyncMode = StrmSyncMode.SelectedFolders,
+                SelectedFolders = new List<string> { "/B" },
+                DeleteOrphans = true,
+                OrphansDryRun = false
+            };
+
+            var generator = new StrmGenerator(testLogger, opt => fakeClient);
+            var result = generator.GenerateAsync(options).Result;
+
+            try
+            {
+                AssertTrue(result.Success, "Sincronización exitosa");
+                AssertTrue(File.Exists(keepPath), "A/keep.strm SIGUE EXISTIENDO (fuera de scannedRoots)");
+                AssertTrue(!File.Exists(oldPath), "B/old.strm se elimina (huérfano dentro de scannedRoots B)");
+                AssertEqual(1, result.OrphansDeleted, "OrphansDeleted debe ser 1");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestAcceptance_P04_TestB()
+        {
+            // b) Con OrphansDryRun=true -> ningún fichero se elimina y el log contiene [ORPHANS-DRYRUN] Se eliminarían 1 .strm.
+            var tempDir = Path.Combine(Path.GetTempPath(), "chomyfin_test_b_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(tempDir, "B"));
+
+            var oldPath = Path.Combine(tempDir, "B", "old.strm");
+            File.WriteAllText(oldPath, "https://chomikuj.pl/user/B/old,888.strm");
+
+            var testLogger = new TestLogger();
+            var fakeClient = new FakeChomikBoxClient
+            {
+                OnGetSubfolders = (parentId, path) =>
+                {
+                    if (parentId == 0)
+                    {
+                        return new List<ChomikFolderInfo> { new ChomikFolderInfo(2, "B", "/B") };
+                    }
+                    return new List<ChomikFolderInfo>();
+                },
+                OnGetFilesInFolder = (folderId, path) =>
+                {
+                    if (folderId == 2)
+                    {
+                        return FolderFilesResult.CreateFiles(new List<ChomikFileInfo>
+                        {
+                            new ChomikFileInfo("201", "newfile.mkv", "/B/newfile.mkv", 100)
+                        });
+                    }
+                    return FolderFilesResult.CreateEmpty();
+                }
+            };
+
+            var options = new StrmGeneratorOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                DestinationPath = tempDir,
+                SyncMode = StrmSyncMode.SelectedFolders,
+                SelectedFolders = new List<string> { "/B" },
+                DeleteOrphans = true,
+                OrphansDryRun = true
+            };
+
+            var generator = new StrmGenerator(testLogger, opt => fakeClient);
+            var result = generator.GenerateAsync(options).Result;
+
+            try
+            {
+                AssertTrue(result.Success, "Sincronización exitosa");
+                AssertTrue(File.Exists(oldPath), "B/old.strm NO se elimina cuando OrphansDryRun=true");
+                AssertEqual(0, result.OrphansDeleted, "OrphansDeleted debe ser 0 en DryRun");
+
+                bool foundLogSummary = testLogger.Logs.Any(l => l.Contains("[ORPHANS-DRYRUN] Se eliminarían 1 .strm"));
+                AssertTrue(foundLogSummary, "El log contiene '[ORPHANS-DRYRUN] Se eliminarían 1 .strm'");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestAcceptance_P04_TestC()
+        {
+            // c) Dos ficheros remotos Peli.mkv (Id 111) y Peli.mp4 (Id 222) en la misma carpeta, sin ficheros previos
+            // -> se crean Peli.strm (propietario Id 111) y Peli [mp4].strm.
+            // Segunda ejecución con UpdateIfUrlChanged -> 0 actualizados.
+            var tempDir = Path.Combine(Path.GetTempPath(), "chomyfin_test_c_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            var testLogger = new TestLogger();
+            var fakeClient = new FakeChomikBoxClient
+            {
+                OnGetSubfolders = (parentId, path) => new List<ChomikFolderInfo>(),
+                OnGetFilesInFolder = (folderId, path) =>
+                {
+                    return FolderFilesResult.CreateFiles(new List<ChomikFileInfo>
+                    {
+                        new ChomikFileInfo("111", "Peli.mkv", "/Peli.mkv", 100),
+                        new ChomikFileInfo("222", "Peli.mp4", "/Peli.mp4", 200)
+                    });
+                }
+            };
+
+            var options = new StrmGeneratorOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                DestinationPath = tempDir,
+                SyncMode = StrmSyncMode.FullAccount,
+                OverwritePolicy = StrmOverwritePolicy.SkipIfExists
+            };
+
+            var generator = new StrmGenerator(testLogger, opt => fakeClient);
+            var result1 = generator.GenerateAsync(options).Result;
+
+            try
+            {
+                AssertTrue(result1.Success, "Primera sincronización exitosa");
+                var peliStrm = Path.Combine(tempDir, "Peli.strm");
+                var peliMp4Strm = Path.Combine(tempDir, "Peli [mp4].strm");
+
+                AssertTrue(File.Exists(peliStrm), "Peli.strm existe");
+                AssertTrue(File.Exists(peliMp4Strm), "Peli [mp4].strm existe");
+
+                var peliStrmContent = File.ReadAllText(peliStrm);
+                AssertTrue(peliStrmContent.Contains(",111.mkv") || peliStrmContent.Contains(",111"), "Peli.strm pertenece al Id 111");
+
+                var peliMp4Content = File.ReadAllText(peliMp4Strm);
+                AssertTrue(peliMp4Content.Contains(",222.mp4") || peliMp4Content.Contains(",222"), "Peli [mp4].strm pertenece al Id 222");
+
+                // Segunda ejecución con UpdateIfUrlChanged
+                options.OverwritePolicy = StrmOverwritePolicy.UpdateIfUrlChanged;
+                var result2 = generator.GenerateAsync(options).Result;
+
+                AssertTrue(result2.Success, "Segunda sincronización exitosa");
+                AssertEqual(0, result2.FilesUpdated, "Segunda ejecución con UpdateIfUrlChanged -> 0 actualizados");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestAcceptance_P04_TestD()
+        {
+            // d) Existe Peli.strm cuyo .original apunta al Id 222 -> Peli.strm sigue siendo el de 222 y Peli.mkv pasa a Peli [mkv].strm; ningún fichero existente se mueve.
+            var tempDir = Path.Combine(Path.GetTempPath(), "chomyfin_test_d_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            var peliStrm = Path.Combine(tempDir, "Peli.strm");
+            var originalFile = Path.Combine(tempDir, "Peli.original");
+
+            // Simular que Peli.strm tiene URL directa (resuelto previamente) y Peli.original tiene la URL con Id 222
+            File.WriteAllText(peliStrm, "https://direct-stream.chomikuj.pl/video/file.mp4");
+            File.WriteAllText(originalFile, "https://chomikuj.pl/user/Peli,222.mp4");
+
+            var originalWriteTimeStrm = File.GetLastWriteTimeUtc(peliStrm);
+            var originalContentStrm = File.ReadAllText(peliStrm);
+
+            var testLogger = new TestLogger();
+            var fakeClient = new FakeChomikBoxClient
+            {
+                OnGetSubfolders = (parentId, path) => new List<ChomikFolderInfo>(),
+                OnGetFilesInFolder = (folderId, path) =>
+                {
+                    return FolderFilesResult.CreateFiles(new List<ChomikFileInfo>
+                    {
+                        new ChomikFileInfo("111", "Peli.mkv", "/Peli.mkv", 100),
+                        new ChomikFileInfo("222", "Peli.mp4", "/Peli.mp4", 200)
+                    });
+                }
+            };
+
+            var options = new StrmGeneratorOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                DestinationPath = tempDir,
+                SyncMode = StrmSyncMode.FullAccount,
+                OverwritePolicy = StrmOverwritePolicy.SkipIfExists
+            };
+
+            var generator = new StrmGenerator(testLogger, opt => fakeClient);
+            var result = generator.GenerateAsync(options).Result;
+
+            try
+            {
+                AssertTrue(result.Success, "Sincronización exitosa");
+
+                var peliMkvStrm = Path.Combine(tempDir, "Peli [mkv].strm");
+                AssertTrue(File.Exists(peliStrm), "Peli.strm sigue existiendo");
+                AssertTrue(File.Exists(peliMkvStrm), "Peli [mkv].strm fue creado para Id 111");
+
+                // Verificar que Peli.strm sigue siendo de 222 y su contenido original no se movió ni sobreescribió
+                var currentContentStrm = File.ReadAllText(peliStrm);
+                AssertEqual(originalContentStrm, currentContentStrm, "El contenido de Peli.strm existente está intacto");
+
+                var peliMkvContent = File.ReadAllText(peliMkvStrm);
+                AssertTrue(peliMkvContent.Contains(",111.mkv") || peliMkvContent.Contains(",111"), "Peli [mkv].strm pertenece a Id 111");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
 
         #endregion
     }

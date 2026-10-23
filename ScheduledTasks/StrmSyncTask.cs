@@ -81,6 +81,7 @@ namespace Chomyfin.ScheduledTasks
                 AllowedExtensions = options.GetAllowedVideoExtensionsList(),
                 OverwritePolicy = options.OverwritePolicy,
                 DeleteOrphans = options.DeleteOrphans,
+                OrphansDryRun = options.OrphansDryRun,
                 EnableSoapDiagnostics = options.EnableSoapDiagnostics,
                 DiagnosticsDirectory = ChomyfinServices.PluginDataPath != null ? System.IO.Path.Combine(ChomyfinServices.PluginDataPath, "diag") : null
             };

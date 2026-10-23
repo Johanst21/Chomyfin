@@ -23,6 +23,7 @@ namespace Chomyfin.Configuration
             AllowedVideoExtensions = "mkv,mp4,avi,m4v,mov,wmv,ts,mpg,mpeg,flv,webm";
             OverwritePolicy = StrmOverwritePolicy.SkipIfExists;
             DeleteOrphans = false;
+            OrphansDryRun = true;
             AutoSyncEnabled = false;
             RefreshLibraryAfterSync = false;
             LastSyncStatus = "No se ha ejecutado ninguna sincronización aún.";
@@ -83,6 +84,10 @@ namespace Chomyfin.Configuration
         [DisplayName("Eliminar archivos huérfanos")]
         [Description("⚠️ ATENCIÓN: Si se activa, se eliminarán los archivos .strm locales que ya no existan en tu cuenta de Chomikuj.")]
         public bool DeleteOrphans { get; set; }
+
+        [DisplayName("Orphans: solo simular (dry-run)")]
+        [Description("Mientras esté activo, solo se registrará qué archivos .strm huérfanos se borrarían sin eliminarlos del disco.")]
+        public bool OrphansDryRun { get; set; }
 
         [DisplayName("Habilitar sincronización programada automática")]
         [Description("Activa la ejecución automática periódica de la tarea de sincronización. Si está desactivada, siempre podrás iniciar la sincronización manualmente desde el panel de Tareas Programadas de Emby.")]
