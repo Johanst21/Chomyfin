@@ -15,17 +15,15 @@
 - Estado: F3 desbloqueado mediante commit 1 (1c3ad15).
 - Verificación necesidad ChomikBoxClient.cs en Chomyfin.Tests.csproj: SÍ es estrictamente necesario porque StrmGenerator.cs referencia directamente `ChomikBoxClient` en línea 23 (`new ChomikBoxClient(...)` como fallback en constructor) y en línea 202 (`ChomikBoxClient.EscapePathId(rawPath)`). Si se retira de Compile Include, el compilador falla con CS0019 y CS0103. Se mantiene en Chomyfin.Tests.csproj.
 
-## Infraestructura F5 (P1-6): ampliación de Chomyfin.Tests.csproj
-- **PackageReference añadido**: `mediabrowser.server.core` (4.10.0.24-beta2) para resolver `ILibraryMonitor`, `IScheduledTask`, etc.
-- **Compile Includes añadidos a Chomyfin.Tests.csproj**:
-  - `ScheduledTasks/StrmSyncTask.cs`: clase bajo prueba para P1-6.
-  - `Services/ChomyfinServices.cs`: registro central donde `StrmSyncTask` consulta `SyncStatusStore` y `OptionsAccessor`.
-  - `Configuration/ChomyfinOptions.cs`: modelo de configuración retornado por `OptionsAccessor`.
-  - `Services/SyncStatusStore.cs`: almacén de estado verificado por los asserts de los tests.
-  - `Services/SiblingFinder.cs`: requerido estrictamente por `ChomyfinServices.cs` (propiedad y método `EnsureServices`).
-  - `Services/SiblingResolutionQueue.cs`: requerido estrictamente por `ChomyfinServices.cs` (propiedad y método `EnsureServices`).
-  - `Services/ChomikujService.cs`: requerido estrictamente por `ChomyfinServices.cs` (`new ChomikujService(logger, optionsAccessor)` en `Initialize`).
-- **Aislamiento de estado**: se añadió `SyncStatusStore.ResetForTests()` y `ChomyfinServices.ResetForTests()` para permitir resetear el singleton estático y sus referencias en bloques try/finally de los tests.
+## Infraestructura de tests F5: Compile Includes y justificación
+- **ScheduledTasks/StrmSyncTask.cs**: Clase bajo prueba para P1-6.
+- **Services/ChomyfinServices.cs**: Registro central donde `StrmSyncTask` consulta `SyncStatusStore` y `OptionsAccessor`.
+- **Configuration/ChomyfinOptions.cs**: Modelo de configuración retornado por `OptionsAccessor`.
+- **Services/SyncStatusStore.cs**: Almacén de estado verificado por los asserts de los tests P1-6.
+- **Services/ChomikujService.cs**: Requerido estrictamente por `ChomyfinServices.cs` (línea 23: `public static IChomikujService ChomikujService`, línea 39: `ChomikujService = new ChomikujService(logger, optionsAccessor)`).
+- **Services/SiblingFinder.cs**: Requerido estrictamente por `ChomyfinServices.cs` (línea 26: `public static SiblingFinder SiblingFinder`, líneas 46 y 63: `SiblingFinder = new SiblingFinder(...)`).
+- **Services/SiblingResolutionQueue.cs**: Requerido estrictamente por `ChomyfinServices.cs` (línea 27: `public static SiblingResolutionQueue SiblingResolutionQueue`, líneas 48 y 68: `SiblingResolutionQueue = new SiblingResolutionQueue(...)`).
+- **Aislamiento de estado**: Se añadieron `SyncStatusStore.ResetForTests()` y `ChomyfinServices.ResetForTests()` (internal/public hook) para permitir resetear el singleton estático y sus referencias en bloques try/finally de los tests.
 
 
 
