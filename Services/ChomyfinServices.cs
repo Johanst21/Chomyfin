@@ -23,7 +23,7 @@ namespace Chomyfin.Services
         public static IChomikujService ChomikujService { get; private set; }
         public static StrmCacheService StrmCacheService { get; private set; }
         public static SyncStatusStore SyncStatusStore { get; } = new SyncStatusStore();
-        public static SiblingFinder SiblingFinder { get; private set; }
+        public static SiblingFinder SiblingFinder { get; internal set; }
         public static SiblingResolutionQueue SiblingResolutionQueue { get; private set; }
         public static string PluginDataPath { get; private set; }
 
@@ -81,7 +81,9 @@ namespace Chomyfin.Services
             ChomikujService = null;
             StrmCacheService = null;
             SiblingFinder = null;
+            SiblingResolutionQueue?.ResetInstanceForTests();
             SiblingResolutionQueue = null;
+            SiblingResolutionQueue.ResetForTests();
             PluginDataPath = null;
             SyncStatusStore.ResetForTests();
         }

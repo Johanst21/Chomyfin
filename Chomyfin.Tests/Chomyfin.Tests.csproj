@@ -34,6 +34,7 @@
     <Compile Include="..\Services\SiblingResolutionQueue.cs" Link="Services\SiblingResolutionQueue.cs" />
     <Compile Include="..\Configuration\ChomyfinOptions.cs" Link="Configuration\ChomyfinOptions.cs" />
     <Compile Include="..\Services\SyncStatusStore.cs" Link="Services\SyncStatusStore.cs" />
+    <Compile Include="..\UrlProvider.cs" Link="UrlProvider.cs" />
   </ItemGroup>
 
 </Project>

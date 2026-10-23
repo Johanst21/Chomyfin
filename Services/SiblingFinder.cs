@@ -47,7 +47,7 @@ namespace Chomyfin.Services
         /// <summary>
         /// Obtiene la lista de rutas .strm hermanas al ítem actual (excluyendo el propio ítem).
         /// </summary>
-        public List<string> FindSiblings(BaseItem item, int maxSiblings)
+        public virtual List<string> FindSiblings(BaseItem item, int maxSiblings)
         {
             var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (item == null || string.IsNullOrWhiteSpace(item.Path) || maxSiblings <= 0)

@@ -105,6 +105,15 @@ namespace Chomyfin.Tests
             RunTest("11.7 EnableCookieCache=false + 10 resoluciones concurrentes sobre el mismo ítem: un ÚNICO login en el log", TestP1_7_11_7_CookieCacheDisabled_TenConcurrent_SingleLoginInLog);
             RunTest("11.8 Test negativo grep + inspección: en métodos con ct NO hay catch general antes de catch(OperationCanceledException)", TestP1_7_11_8_NegativeGrep_CatchOrderInMethodsWithCt);
 
+            // 12. Pruebas P1-8 (SiblingResolutionQueue y UrlProvider)
+            RunTest("12.1 SiblingResolutionQueue: resolución secuencial con SemaphoreSlim(1,1)", TestP1_8_12_1_SequentialResolution_SemaphoreMutualExclusion);
+            RunTest("12.2 SiblingResolutionQueue: cola saturada descarta y registra log", TestP1_8_12_2_BoundedQueue_SaturationDropsAndLogs);
+            RunTest("12.3 SiblingResolutionQueue: cooldown omite archivo intentado recientemente", TestP1_8_12_3_Cooldown_RecentItemsSkipped);
+            RunTest("12.4 UrlProvider: GetMediaSources ejecuta resolución de hermanos fire-and-forget", TestP1_8_12_4_FireAndForget_GetMediaSourcesReturnsImmediately);
+            RunTest("12.4a UrlProvider: CancellationToken de la petición NO se pasa al Task.Run de FindSiblings", TestP1_8_12_4a_CancellationToken_NotPassedToSiblingTaskRun);
+            RunTest("12.4b UrlProvider: Excepción en FindSiblings se captura en log sin romper GetMediaSources", TestP1_8_12_4b_FindSiblingsThrows_CaughtAndLogged_GetMediaSourcesSucceeds);
+            RunTest("12.5 SiblingResolutionQueue: purga de _cooldowns expira entradas antiguas", TestP1_8_12_5_CooldownPurge_EvictsExpiredEntries);
+
             Console.WriteLine("\n===========================================");
             Console.WriteLine($"TOTAL PRUEBAS: {_passed + _failed} | PASADAS: {_passed} | FALLADAS: {_failed}");
             Console.WriteLine("===========================================");
@@ -2166,6 +2175,270 @@ namespace Chomyfin.Tests
                     }
                 }
             }
+        }
+
+        #endregion
+
+        #region 12. Acceptance Tests P1-8 (12.1 - 12.5)
+
+        public class FakeVideoItem : MediaBrowser.Controller.Entities.Video
+        {
+        }
+
+        public class FakeSiblingFinderThrows : SiblingFinder
+        {
+            public FakeSiblingFinderThrows(MediaBrowser.Model.Logging.ILogger logger) : base(logger, null, null) { }
+
+            public override List<string> FindSiblings(MediaBrowser.Controller.Entities.BaseItem item, int maxSiblings)
+            {
+                throw new InvalidOperationException("Fallo inducido en SiblingFinder para prueba");
+            }
+        }
+
+        static void TestP1_8_12_1_SequentialResolution_SemaphoreMutualExclusion()
+        {
+            var logger = new TestLogger();
+            bool hadOverlap = false;
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p18_1_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var s1 = Path.Combine(tempDir, "s1.strm");
+                var s2 = Path.Combine(tempDir, "s2.strm");
+                File.WriteAllText(s1, "https://chomikuj.pl/u/s1,111.mkv");
+                File.WriteAllText(s2, "https://chomikuj.pl/u/s2,222.mkv");
+
+                var fs = FakeFileSystemProxy.Create();
+                var chomikService = new FakeChomikujDirectService();
+
+                var cacheService = new StrmCacheService(logger, fs, () => chomikService);
+
+                var queue = new SiblingResolutionQueue(logger, () => cacheService, () => chomikService);
+
+                // Encolar dos lotes de hermanos
+                queue.EnqueueSiblings(new List<string> { s1 }, s1);
+                queue.EnqueueSiblings(new List<string> { s2 }, s2);
+
+                // Esperar a que se procesen ambos
+                Thread.Sleep(300);
+
+                AssertFalse(hadOverlap, "SemaphoreSlim(1,1) asegura ejecución secuencial sin solapamiento");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+                SiblingResolutionQueue.ResetForTests();
+            }
+        }
+
+        static void TestP1_8_12_2_BoundedQueue_SaturationDropsAndLogs()
+        {
+            var logger = new TestLogger();
+            var queue = new SiblingResolutionQueue(logger, () => null, () => null);
+
+            SiblingResolutionQueue.MaxQueueCapacity = 2;
+            try
+            {
+                // Encolar lote que supera la capacidad (3 > 2)
+                queue.EnqueueSiblings(new List<string> { "/path/1.strm", "/path/2.strm", "/path/3.strm" }, "/path/trigger.strm");
+
+                AssertTrue(logger.Logs.Any(l => l.Contains("cola de hermanos saturada")), "Log contiene 'cola de hermanos saturada'");
+            }
+            finally
+            {
+                SiblingResolutionQueue.ResetForTests();
+            }
+        }
+
+        static void TestP1_8_12_3_Cooldown_RecentItemsSkipped()
+        {
+            var logger = new TestLogger();
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p18_3_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var s1 = Path.Combine(tempDir, "item1.strm");
+                File.WriteAllText(s1, "https://chomikuj.pl/u/item1,111.mkv");
+
+                var fs = FakeFileSystemProxy.Create();
+                var chomikService = new FakeChomikujDirectService();
+                var cacheService = new StrmCacheService(logger, fs, () => chomikService);
+
+                var queue = new SiblingResolutionQueue(logger, () => cacheService, () => chomikService);
+
+                // 1ra vez
+                queue.EnqueueSiblings(new List<string> { s1 }, s1);
+                Thread.Sleep(200);
+
+                // 2da vez inmediatamente (dentro de cooldown de 5 min)
+                queue.EnqueueSiblings(new List<string> { s1 }, s1);
+                Thread.Sleep(200);
+
+                // Debe registrarse cooldown y omitirse
+                AssertTrue(queue.CooldownsForTests.ContainsKey(s1), "s1 está en cooldown");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+                SiblingResolutionQueue.ResetForTests();
+            }
+        }
+
+        static void TestP1_8_12_4_FireAndForget_GetMediaSourcesReturnsImmediately()
+        {
+            var logger = new TestLogger();
+            var logManager = FakeLogManagerProxy.Create(logger);
+            var fs = FakeFileSystemProxy.Create();
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p18_4_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var mainStrm = Path.Combine(tempDir, "Movie.strm");
+                var mainOrig = Path.Combine(tempDir, "Movie.original");
+                File.WriteAllText(mainStrm, "https://s123.chomikuj.pl/fast.mkv");
+                File.WriteAllText(mainOrig, "https://chomikuj.pl/user/Movie,123.mkv");
+
+                var options = new Configuration.ChomyfinOptions
+                {
+                    Username = "user",
+                    Password = "pwd",
+                    ResolveSiblingVersions = true,
+                    MaxSiblingsPerOpen = 5
+                };
+
+                ChomyfinServices.Initialize(logger, () => options, fs, null);
+
+                var provider = new UrlProvider(logManager, fs);
+                var item = new FakeVideoItem { Path = mainStrm };
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var sources = provider.GetMediaSources(item, CancellationToken.None).GetAwaiter().GetResult();
+                sw.Stop();
+
+                AssertTrue(sw.ElapsedMilliseconds < 500, "GetMediaSources retorna inmediatamente sin bloquear por hermanos");
+                AssertEqual(1, sources.Count, "Devuelve 1 MediaSourceInfo para el ítem principal");
+                AssertEqual("https://s123.chomikuj.pl/fast.mkv", sources[0].Path, "Path del MediaSourceInfo coincide");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+                ChomyfinServices.ResetForTests();
+            }
+        }
+
+        static void TestP1_8_12_4a_CancellationToken_NotPassedToSiblingTaskRun()
+        {
+            var logger = new TestLogger();
+            var logManager = FakeLogManagerProxy.Create(logger);
+            var fs = FakeFileSystemProxy.Create();
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p18_4a_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var mainStrm = Path.Combine(tempDir, "Movie.strm");
+                var mainOrig = Path.Combine(tempDir, "Movie.original");
+                // Ya es URL directa por lo que GetOrResolveDirectUrlAsync resuelve síncronamente sin red
+                File.WriteAllText(mainStrm, "https://s123.chomikuj.pl/movie.mkv");
+                File.WriteAllText(mainOrig, "https://chomikuj.pl/user/Movie,123.mkv");
+
+                var options = new Configuration.ChomyfinOptions
+                {
+                    Username = "user",
+                    Password = "pwd",
+                    ResolveSiblingVersions = true,
+                    MaxSiblingsPerOpen = 5
+                };
+
+                ChomyfinServices.Initialize(logger, () => options, fs, null);
+
+                var provider = new UrlProvider(logManager, fs);
+                var item = new FakeVideoItem { Path = mainStrm };
+
+                using var cts = new CancellationTokenSource();
+                cts.Cancel(); // Token ya cancelado
+
+                // GetMediaSources no debe lanzar OperationCanceledException si el archivo ya está resuelto
+                var sources = provider.GetMediaSources(item, cts.Token).GetAwaiter().GetResult();
+
+                AssertEqual(1, sources.Count, "Devuelve MediaSourceInfo del ítem principal sin lanzar OperationCanceledException");
+                AssertEqual("https://s123.chomikuj.pl/movie.mkv", sources[0].Path, "MediaSourceInfo del ítem principal devuelto intacto");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+                ChomyfinServices.ResetForTests();
+            }
+        }
+
+        static void TestP1_8_12_4b_FindSiblingsThrows_CaughtAndLogged_GetMediaSourcesSucceeds()
+        {
+            var logger = new TestLogger();
+            var logManager = FakeLogManagerProxy.Create(logger);
+            var fs = FakeFileSystemProxy.Create();
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p18_4b_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var mainStrm = Path.Combine(tempDir, "Movie.strm");
+                var mainOrig = Path.Combine(tempDir, "Movie.original");
+                File.WriteAllText(mainStrm, "https://s123.chomikuj.pl/movie.mkv");
+                File.WriteAllText(mainOrig, "https://chomikuj.pl/user/Movie,123.mkv");
+
+                var options = new Configuration.ChomyfinOptions
+                {
+                    Username = "user",
+                    Password = "pwd",
+                    ResolveSiblingVersions = true,
+                    MaxSiblingsPerOpen = 5
+                };
+
+                ChomyfinServices.Initialize(logger, () => options, fs, null);
+                // Sustituir SiblingFinder por un finder que lanza excepción
+                ChomyfinServices.SiblingFinder = new FakeSiblingFinderThrows(logger);
+
+                var provider = new UrlProvider(logManager, fs);
+                var item = new FakeVideoItem { Path = mainStrm };
+
+                var sources = provider.GetMediaSources(item, CancellationToken.None).GetAwaiter().GetResult();
+
+                // Esperar a que el Task.Run registre el error en el log
+                Thread.Sleep(200);
+
+                AssertEqual(1, sources.Count, "GetMediaSources NO se rompe y devuelve el ítem principal");
+                AssertTrue(logger.Logs.Any(l => l.Contains("Chomyfin: error iniciando resolución de hermanos para")), "Log contiene 'Chomyfin: error iniciando resolución de hermanos para …'");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+                ChomyfinServices.ResetForTests();
+            }
+        }
+
+        static void TestP1_8_12_5_CooldownPurge_EvictsExpiredEntries()
+        {
+            var logger = new TestLogger();
+            var queue = new SiblingResolutionQueue(logger, () => null, () => null);
+
+            var oldTime = DateTime.UtcNow - TimeSpan.FromMinutes(10);
+            var recentTime = DateTime.UtcNow;
+
+            // Llenar más de 500 entradas
+            for (int i = 0; i < 505; i++)
+            {
+                queue.CooldownsForTests[$"/path/file_{i}.strm"] = oldTime;
+            }
+            queue.CooldownsForTests["/path/recent.strm"] = recentTime;
+
+            AssertTrue(queue.CooldownsForTests.Count > 500, "Hay más de 500 entradas");
+
+            queue.MaybePurgeCooldowns();
+
+            AssertEqual(1, queue.CooldownsForTests.Count, "Las entradas expiradas (>5 min) fueron purgadas; solo queda la reciente");
+            AssertTrue(queue.CooldownsForTests.ContainsKey("/path/recent.strm"), "La entrada reciente se conserva intacta");
         }
 
         #endregion

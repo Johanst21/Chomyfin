@@ -25,5 +25,15 @@
 - **Services/SiblingResolutionQueue.cs**: Requerido estrictamente por `ChomyfinServices.cs` (línea 27: `public static SiblingResolutionQueue SiblingResolutionQueue`, líneas 48 y 68: `SiblingResolutionQueue = new SiblingResolutionQueue(...)`).
 - **Aislamiento de estado**: Se añadieron `SyncStatusStore.ResetForTests()` y `ChomyfinServices.ResetForTests()` (internal/public hook) para permitir resetear el singleton estático y sus referencias en bloques try/finally de los tests.
 
+## Verificación en entorno real F6 (P1-8): BaseItem fuera del hilo de petición
+- **Riesgo**: `UrlProvider.GetMediaSources` delega la búsqueda y resolución de versiones hermanas a un hilo en segundo plano mediante `Task.Run(() => finder.FindSiblings(item, ...))`. El objeto `BaseItem item` proviene del contexto de la petición de reproducción de Emby. Si Emby accede a propiedades lazy o al contexto de base de datos/sesión del hilo principal dentro de `FindSiblings`, existe riesgo teórico de excepciones de concurrencia (`ObjectDisposedException`, `InvalidOperationException` o fallo de contexto en `item.GetParent()` o `item.LibraryManager`).
+- **Pasos para verificar en Emby real**:
+  1. Instalar la versión compilada en el servidor Emby real.
+  2. Abrir un episodio de serie que disponga de versiones alternativas (distinta resolución/calidad) en formato `.strm`.
+  3. Abrir una película que disponga de versiones alternativas en formato `.strm`.
+  4. Inspeccionar los logs de Emby y verificar que NO aparece ninguna entrada del tipo `"Chomyfin: error iniciando resolución de hermanos para ..."` ni `"Error buscando versiones hermanas para ..."`.
+  5. Comprobar que la reproducción del ítem principal comienza inmediatamente sin latencia y que las versiones hermanas se resuelven en segundo plano.
+
+
 
 
