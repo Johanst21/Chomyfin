@@ -70,52 +70,52 @@ namespace Chomyfin.Services
                 return result;
             }
 
-            string fullDestinationPath;
             try
             {
-                fullDestinationPath = Path.GetFullPath(options.DestinationPath);
-                if (!Directory.Exists(fullDestinationPath))
-                {
-                    Directory.CreateDirectory(fullDestinationPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                _executionLock.Release();
-                result.Success = false;
-                result.Message = $"No se pudo preparar la carpeta de destino: {ex.Message}";
-                result.EndTime = DateTime.UtcNow;
-                return result;
-            }
-
-            var allowedExtensions = new HashSet<string>(
-                (options.AllowedExtensions ?? new List<string>())
-                    .Select(e => e.StartsWith(".") ? e.ToLowerInvariant() : "." + e.ToLowerInvariant()),
-                StringComparer.OrdinalIgnoreCase
-            );
-
-            var generatedStrmFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            var stopwatchTotal = Stopwatch.StartNew();
-            long totalDelayMs = 0;
-            int foldersCalls = 0;
-            int foldersFailed = 0;
-            int downloadCalls = 0;
-            int downloadFailed = 0;
-            int foldersVisited = 0;
-            int foldersEmpty = 0;
-            int foldersWithErrors = 0;
-            int consecutiveFailures = 0;
-            const int MaxConsecutiveFailures = 5;
-            int totalApiFilesDiscovered = 0;
-            int totalFilesDiscardedByFilter = 0;
-            var extensionFrequencies = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-            using (var client = _clientFactory(options))
-            {
+                string fullDestinationPath;
                 try
                 {
-                    _logger?.Info("[StrmGenerator] Iniciando sesión SOAP con Chomikuj ({0})...", options.Username);
+                    fullDestinationPath = Path.GetFullPath(options.DestinationPath);
+                    if (!Directory.Exists(fullDestinationPath))
+                    {
+                        Directory.CreateDirectory(fullDestinationPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result.Success = false;
+                    result.Message = $"No se pudo preparar la carpeta de destino: {ex.Message}";
+                    return result;
+                }
+
+                var allowedExtensions = new HashSet<string>(
+                    (options.AllowedExtensions ?? new List<string>())
+                        .Select(e => e.StartsWith(".") ? e.ToLowerInvariant() : "." + e.ToLowerInvariant()),
+                    StringComparer.OrdinalIgnoreCase
+                );
+
+                var generatedStrmFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                var stopwatchTotal = Stopwatch.StartNew();
+                long totalDelayMs = 0;
+                int foldersCalls = 0;
+                int foldersFailed = 0;
+                int downloadCalls = 0;
+                int downloadFailed = 0;
+                int foldersVisited = 0;
+                int foldersEmpty = 0;
+                int foldersWithErrors = 0;
+                int consecutiveFailures = 0;
+                const int MaxConsecutiveFailures = 5;
+                int totalApiFilesDiscovered = 0;
+                int totalFilesDiscardedByFilter = 0;
+                var extensionFrequencies = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                using (var client = _clientFactory(options))
+                {
+                    try
+                    {
+                        _logger?.Info("[StrmGenerator] Iniciando sesión SOAP con Chomikuj ({0})...", options.Username);
                     var loginOk = await client.LoginAsync(options.Username, options.Password, cancellationToken).ConfigureAwait(false);
                     if (!loginOk)
                     {
@@ -470,10 +470,13 @@ namespace Chomyfin.Services
                     {
                         _logger?.Debug("[StrmGenerator] Excepción en Logout: {0}", ex.ToString());
                     }
-
-                    _executionLock.Release();
-                    result.EndTime = DateTime.UtcNow;
                 }
+            }
+            }
+            finally
+            {
+                _executionLock.Release();
+                result.EndTime = DateTime.UtcNow;
             }
 
             return result;

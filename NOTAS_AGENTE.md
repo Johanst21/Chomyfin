@@ -5,6 +5,7 @@
 ## Hallazgos fuera de plan (candidatos P2)
 - UrlProvider.cs:133-136: el User-Agent ahora se envía siempre que service.UserAgent no esté vacío, antes solo se enviaba junto a las cookies. Cambio de comportamiento observable menor; sin impacto de seguridad. Incluir en "Notas de release" al cerrar la release.
 - ChomikBoxClient.cs:478: `throw new InvalidOperationException($"SOAP Fault en {action}: {faultString}")` usa faultString sin sanitizar. Fuera de alcance de P0-3 (el plan solo pedía el _logger). Riesgo: si la excepción se loguea en StrmSyncTask/ChomyfinApiService, el faultString crudo podría aparecer en logs de Emby.
+- StrmGenerator.AssignStrmFileNames lee .original y .strm con File.ReadAllText sin lock. Se ejecuta antes del bucle de escritura, por lo que no compite con ProcessFileStrm, pero podría leer contenido a medias si un cliente abre el .strm exactamente en ese instante. Probabilidad baja, impacto bajo. Candidato a incluir en el lock compartido de P1-9 en una iteración futura (fuera del alcance de este plan).
 
 ## Bloqueo F3 (P0-4): infraestructura de tests insuficiente
 - [VERIFICAR] del plan punto 6: clientFactory inyectable (SÍ existe en StrmGenerator) y FakeChomikBoxClient (SÍ existe en Program.cs:465-490).

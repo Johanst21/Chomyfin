@@ -77,6 +77,11 @@ namespace Chomyfin.Tests
             RunTest("7.3 P0-4 Test c: Colisión remota Peli.mkv y Peli.mp4 sin ficheros previos -> Peli.strm (Id 111) y Peli [mp4].strm, 2da ejecucion 0 actualizados", TestAcceptance_P04_TestC);
             RunTest("7.4 P0-4 Test d: Existe Peli.strm apuntando a Id 222 -> Peli.strm preservado para 222 y Peli.mkv pasa a Peli [mkv].strm sin mover ficheros", TestAcceptance_P04_TestD);
 
+            // 8. Pruebas P1-5
+            RunTest("8.1 P1-5: clientFactory lanza InvalidOperationException -> 1ª lanza, 2ª con factory válido NO devuelve 'Ya hay una generación...' y Success=true", TestP1_5_ClientFactoryThrows_ReleasesLock);
+            RunTest("8.2 P1-5: AllowedExtensions con null -> 1ª lanza, 2ª funciona", TestP1_5_AllowedExtensionsNullItem_ReleasesLock);
+            RunTest("8.3 P1-5: Concurrencia llamada activa -> llamada concurrente devuelve 'Ya hay una generación en curso' y semáforo sigue disponible después", TestP1_5_Concurrency_BusyReturnsErrorAndLockPreserved);
+
             Console.WriteLine("\n===========================================");
             Console.WriteLine($"TOTAL PRUEBAS: {_passed + _failed} | PASADAS: {_passed} | FALLADAS: {_failed}");
             Console.WriteLine("===========================================");
@@ -106,6 +111,11 @@ namespace Chomyfin.Tests
         static void AssertTrue(bool condition, string message)
         {
             if (!condition) throw new Exception($"Aserción fallida: {message}");
+        }
+
+        static void AssertFalse(bool condition, string message)
+        {
+            if (condition) throw new Exception($"Aserción fallida: {message}");
         }
 
         static void AssertEqual<T>(T expected, T actual, string message)
@@ -1045,6 +1055,155 @@ namespace Chomyfin.Tests
             }
         }
 
+        #region P1-5 Tests
+
+        static void TestP1_5_ClientFactoryThrows_ReleasesLock()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p15_1_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var options = new StrmGeneratorOptions
+                {
+                    Username = "user",
+                    Password = "pwd",
+                    DestinationPath = tempDir
+                };
+
+                bool throwOnFactory = true;
+                var fakeClient = new FakeChomikBoxClient();
+                var generator = new StrmGenerator(new TestLogger(), opt =>
+                {
+                    if (throwOnFactory)
+                    {
+                        throw new InvalidOperationException("Factory failure simulated");
+                    }
+                    return fakeClient;
+                });
+
+                bool didThrow = false;
+                try
+                {
+                    generator.GenerateAsync(options).GetAwaiter().GetResult();
+                }
+                catch (InvalidOperationException)
+                {
+                    didThrow = true;
+                }
+                AssertTrue(didThrow, "Primera llamada lanzó InvalidOperationException");
+
+                // Segunda llamada con factory válido
+                throwOnFactory = false;
+                var result = generator.GenerateAsync(options).GetAwaiter().GetResult();
+                AssertTrue(result.Success, "Segunda llamada tuvo éxito (Success=true)");
+                AssertFalse(result.Message.Contains("Ya hay una generación"), "Segunda llamada NO reporta 'Ya hay una generación en curso'");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestP1_5_AllowedExtensionsNullItem_ReleasesLock()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p15_2_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var fakeClient = new FakeChomikBoxClient();
+                var generator = new StrmGenerator(new TestLogger(), opt => fakeClient);
+
+                var optionsFaulty = new StrmGeneratorOptions
+                {
+                    Username = "user",
+                    Password = "pwd",
+                    DestinationPath = tempDir,
+                    AllowedExtensions = new List<string> { ".mp4", null, ".mkv" }
+                };
+
+                bool didThrow = false;
+                try
+                {
+                    generator.GenerateAsync(optionsFaulty).GetAwaiter().GetResult();
+                }
+                catch (NullReferenceException)
+                {
+                    didThrow = true;
+                }
+                AssertTrue(didThrow, "Primera llamada lanzó NullReferenceException por elemento null");
+
+                var optionsValid = new StrmGeneratorOptions
+                {
+                    Username = "user",
+                    Password = "pwd",
+                    DestinationPath = tempDir,
+                    AllowedExtensions = new List<string> { ".mp4", ".mkv" }
+                };
+
+                var result = generator.GenerateAsync(optionsValid).GetAwaiter().GetResult();
+                AssertTrue(result.Success, "Segunda llamada funciona con Success=true");
+                AssertFalse(result.Message.Contains("Ya hay una generación"), "Segunda llamada NO reporta 'Ya hay una generación en curso'");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestP1_5_Concurrency_BusyReturnsErrorAndLockPreserved()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p15_3_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var firstStarted = new ManualResetEventSlim(false);
+                var unblockFirst = new ManualResetEventSlim(false);
+
+                var fakeClient = new FakeChomikBoxClient
+                {
+                    OnGetSubfolders = (parentId, path) =>
+                    {
+                        firstStarted.Set();
+                        unblockFirst.Wait(5000);
+                        return new List<ChomikFolderInfo>();
+                    }
+                };
+
+                var generator = new StrmGenerator(new TestLogger(), opt => fakeClient);
+
+                var options = new StrmGeneratorOptions
+                {
+                    Username = "user",
+                    Password = "pwd",
+                    DestinationPath = tempDir
+                };
+
+                var task1 = Task.Run(() => generator.GenerateAsync(options));
+
+                AssertTrue(firstStarted.Wait(5000), "La primera tarea inició y está dentro de la sección crítica");
+
+                // Segunda tarea concurrente debe fallar de inmediato diciendo 'Ya hay una generación en curso'
+                var result2 = generator.GenerateAsync(options).GetAwaiter().GetResult();
+                AssertFalse(result2.Success, "La segunda llamada devuelve Success=false");
+                AssertTrue(result2.Message.Contains("Ya hay una generación de .strm en curso"), "El mensaje indica que ya hay una generación en curso");
+
+                // Desbloqueamos la primera
+                unblockFirst.Set();
+                var result1 = task1.GetAwaiter().GetResult();
+                AssertTrue(result1.Success, "La primera tarea finalizó con Success=true");
+
+                // Una tercera llamada posterior debe adquirir el lock sin problemas
+                var result3 = generator.GenerateAsync(options).GetAwaiter().GetResult();
+                AssertTrue(result3.Success, "Una tercera llamada tras completar la primera adquiere el lock con éxito");
+                AssertFalse(result3.Message.Contains("Ya hay una generación"), "No devuelve 'Ya hay una generación'");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        #endregion
         #endregion
     }
 }
