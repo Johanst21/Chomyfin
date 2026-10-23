@@ -56,7 +56,7 @@ namespace Chomyfin.Services
             }
         }
 
-        public void ResetForTests()
+        internal void ResetForTests()
         {
             lock (_syncLock)
             {

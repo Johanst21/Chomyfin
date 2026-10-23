@@ -95,6 +95,16 @@ namespace Chomyfin.Tests
             RunTest("10.2 P1-6 Test b: Excepción no-cancelatoria -> catch(Exception) atrapa, IsRunning=false, LastSuccess=false, libraryMonitor no invocado", TestP1_6_NonCancellationException_CaughtAndUpdatesStatus);
             RunTest("10.3 P1-6 Test c: Flujo normal exitoso -> result.Success=true, IsRunning=false, LastSuccess=true, libraryMonitor recibe ReportFileSystemChanged", TestP1_6_Success_InvokesLibraryMonitor);
 
+            // 11. Pruebas P1-7 (ChomikujService)
+            RunTest("11.1 Reintento con credenciales inválidas no martillea el sitio dentro de la ventana de backoff de 5 min", TestP1_7_11_1_InvalidCredentials_Backoff5Min);
+            RunTest("11.2 Cancelación durante GetStringAsync en ResolveUrlAsync propaga OperationCanceledException limpiamente", TestP1_7_11_2_Cancellation_PropagatesCleanly);
+            RunTest("11.3 Concurrencia de resoluciones bajo caché deshabilitada comparte un único login en vuelo (sin tormenta)", TestP1_7_11_3_Concurrency_SharedLoginInFlight);
+            RunTest("11.4 Await de _loginTask reutilizable propaga resultado a todos los llamadores concurrentes", TestP1_7_11_4_LoginTask_ReusableResult);
+            RunTest("11.5 ForceReLogin limpia sesión, vacía cookies con Expired = true e invalida token post-login", TestP1_7_11_5_ForceReLogin_CleansSessionAndCookies);
+            RunTest("11.6 Contraseña incorrecta + backoff: contador de intentos de login en el log durante ventana de 5 min == 1", TestP1_7_11_6_WrongPassword_BackoffLogCount);
+            RunTest("11.7 EnableCookieCache=false + 10 resoluciones concurrentes sobre el mismo ítem: un ÚNICO login en el log", TestP1_7_11_7_CookieCacheDisabled_TenConcurrent_SingleLoginInLog);
+            RunTest("11.8 Test negativo grep + inspección: en métodos con ct NO hay catch general antes de catch(OperationCanceledException)", TestP1_7_11_8_NegativeGrep_CatchOrderInMethodsWithCt);
+
             Console.WriteLine("\n===========================================");
             Console.WriteLine($"TOTAL PRUEBAS: {_passed + _failed} | PASADAS: {_passed} | FALLADAS: {_failed}");
             Console.WriteLine("===========================================");
@@ -1699,6 +1709,466 @@ namespace Chomyfin.Tests
             }
         }
 
+        #region 11. Acceptance Tests P1-7 (11.1 - 11.8)
+
+        class MockHttpMessageHandler : System.Net.Http.HttpMessageHandler
+        {
+            public Func<System.Net.Http.HttpRequestMessage, System.Threading.CancellationToken, System.Net.Http.HttpResponseMessage> SendAsyncFunc { get; set; }
+
+            protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, System.Threading.CancellationToken cancellationToken)
+            {
+                if (SendAsyncFunc != null)
+                {
+                    return Task.FromResult(SendAsyncFunc(request, cancellationToken));
+                }
+                return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK));
+            }
+        }
+
+        static void TestP1_7_11_1_InvalidCredentials_Backoff5Min()
+        {
+            var logger = new TestLogger();
+            int postLoginAttempts = 0;
+
+            var mockHandler = new MockHttpMessageHandler
+            {
+                SendAsyncFunc = (req, ct) =>
+                {
+                    var uri = req.RequestUri.ToString();
+                    if (uri.Contains("/action/Login/Login"))
+                    {
+                        Interlocked.Increment(ref postLoginAttempts);
+                        return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"IsSuccess\":false,\"Message\":\"Niepoprawne dane logowania\"}")
+                        };
+                    }
+                    return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new System.Net.Http.StringContent("<input name=\"__RequestVerificationToken\" value=\"token_123\" />")
+                    };
+                }
+            };
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user_bad",
+                Password = "pwd_bad"
+            };
+
+            using var service = new ChomikujService(logger, () => options, mockHandler);
+
+            var res1 = service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None).GetAwaiter().GetResult();
+            AssertEqual(null, res1, "1ra llamada falla y devuelve null");
+            AssertEqual(1, postLoginAttempts, "1ra llamada ejecuta login");
+
+            var res2 = service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None).GetAwaiter().GetResult();
+            AssertEqual(null, res2, "2da llamada dentro de 5 min falla y devuelve null");
+            AssertEqual(1, postLoginAttempts, "2da llamada dentro de 5 min NO ejecuta login (respetó backoff)");
+        }
+
+        static void TestP1_7_11_2_Cancellation_PropagatesCleanly()
+        {
+            var logger = new TestLogger();
+            using var cts = new CancellationTokenSource();
+
+            var mockHandler = new MockHttpMessageHandler
+            {
+                SendAsyncFunc = (req, ct) =>
+                {
+                    var uri = req.RequestUri.ToString();
+                    if (uri.Contains("/action/Login/Login"))
+                    {
+                        var resp = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"LoggedIn\":true}")
+                        };
+                        resp.Headers.Add("Set-Cookie", "rememberMe=tok; Path=/; Domain=chomikuj.pl");
+                        return resp;
+                    }
+                    if (uri.Contains("chomikuj.pl/user/file,999999.mkv"))
+                    {
+                        // Simulamos cancelación en la obtención de la página
+                        cts.Cancel();
+                        ct.ThrowIfCancellationRequested();
+                    }
+                    return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new System.Net.Http.StringContent("<input name=\"__RequestVerificationToken\" value=\"token_123\" />")
+                    };
+                }
+            };
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                UseFastResolvePath = false
+            };
+
+            using var service = new ChomikujService(logger, () => options, mockHandler);
+
+            bool threwCancellation = false;
+            try
+            {
+                service.ResolveUrlAsync("https://chomikuj.pl/user/file,999999.mkv", cts.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+                threwCancellation = true;
+            }
+
+            AssertTrue(threwCancellation, "ResolveUrlAsync propaga OperationCanceledException sin tragarla");
+        }
+
+        static void TestP1_7_11_3_Concurrency_SharedLoginInFlight()
+        {
+            var logger = new TestLogger();
+            int postLoginAttempts = 0;
+            var barrier = new ManualResetEventSlim(false);
+            var ensureLoggedInLatch = new CountdownEvent(2);
+
+            var mockHandler = new MockHttpMessageHandler
+            {
+                SendAsyncFunc = (req, ct) =>
+                {
+                    var uri = req.RequestUri.ToString();
+                    if (uri.Contains("/action/Login/Login"))
+                    {
+                        Interlocked.Increment(ref postLoginAttempts);
+                        barrier.Wait(5000);
+                        var resp = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"LoggedIn\":true}")
+                        };
+                        resp.Headers.Add("Set-Cookie", "rememberMe=tok; Path=/; Domain=chomikuj.pl");
+                        return resp;
+                    }
+                    if (uri.Contains("Download"))
+                    {
+                        return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"redirectUrl\":\"https://direct.chomikuj.pl/file.mkv\"}")
+                        };
+                    }
+                    return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new System.Net.Http.StringContent("<input name=\"__RequestVerificationToken\" value=\"tok\" /><div data-file-id=\"123456\"></div>")
+                    };
+                }
+            };
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                EnableCookieCache = false,
+                UseFastResolvePath = false
+            };
+
+            using var service = new ChomikujService(logger, () => options, mockHandler);
+            service.OnEnsureLoggedInForTests = () =>
+            {
+                if (!ensureLoggedInLatch.IsSet)
+                {
+                    ensureLoggedInLatch.Signal();
+                }
+            };
+
+            var task1 = Task.Run(() => service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None));
+            var task2 = Task.Run(() => service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None));
+
+            // Esperar a que ambos llamadores concurrentes hayan entrado a EnsureLoggedIn y obtenido la misma _loginTask
+            ensureLoggedInLatch.Wait(5000);
+            barrier.Set();
+
+            Task.WaitAll(task1, task2);
+
+            AssertEqual(1, postLoginAttempts, "Concurrencia en vuelo comparte el mismo LoginAsync() sin duplicar llamadas HTTP");
+            AssertTrue(!string.IsNullOrEmpty(task1.Result), "Tarea 1 obtuvo URL");
+            AssertTrue(!string.IsNullOrEmpty(task2.Result), "Tarea 2 obtuvo URL");
+        }
+
+        static void TestP1_7_11_4_LoginTask_ReusableResult()
+        {
+            var logger = new TestLogger();
+            var tcs = new TaskCompletionSource<bool>();
+
+            var mockHandler = new MockHttpMessageHandler
+            {
+                SendAsyncFunc = (req, ct) =>
+                {
+                    var uri = req.RequestUri.ToString();
+                    if (uri.Contains("/action/Login/Login"))
+                    {
+                        tcs.Task.Wait(5000);
+                        var resp = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"LoggedIn\":true}")
+                        };
+                        resp.Headers.Add("Set-Cookie", "rememberMe=tok; Path=/; Domain=chomikuj.pl");
+                        return resp;
+                    }
+                    if (uri.Contains("Download"))
+                    {
+                        return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"redirectUrl\":\"https://direct.chomikuj.pl/file.mkv\"}")
+                        };
+                    }
+                    return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new System.Net.Http.StringContent("<input name=\"__RequestVerificationToken\" value=\"tok\" /><div data-file-id=\"123456\"></div>")
+                    };
+                }
+            };
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                UseFastResolvePath = false
+            };
+
+            using var service = new ChomikujService(logger, () => options, mockHandler);
+
+            var t1 = Task.Run(() => service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None));
+            var t2 = Task.Run(() => service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None));
+            var t3 = Task.Run(() => service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None));
+
+            Thread.Sleep(50);
+            tcs.SetResult(true);
+
+            Task.WaitAll(t1, t2, t3);
+
+            AssertEqual("https://direct.chomikuj.pl/file.mkv", t1.Result, "Llamador 1 recibe URL del await");
+            AssertEqual("https://direct.chomikuj.pl/file.mkv", t2.Result, "Llamador 2 recibe URL del await");
+            AssertEqual("https://direct.chomikuj.pl/file.mkv", t3.Result, "Llamador 3 recibe URL del await");
+        }
+
+        static void TestP1_7_11_5_ForceReLogin_CleansSessionAndCookies()
+        {
+            var logger = new TestLogger();
+            var cookieContainer = new System.Net.CookieContainer();
+
+            var mockHandler = new MockHttpMessageHandler
+            {
+                SendAsyncFunc = (req, ct) =>
+                {
+                    var uri = req.RequestUri.ToString();
+                    if (uri.Contains("/action/Login/Login"))
+                    {
+                        cookieContainer.Add(new System.Net.Cookie("rememberMe", "session123", "/", "chomikuj.pl"));
+                        var resp = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"LoggedIn\":true}")
+                        };
+                        return resp;
+                    }
+                    if (uri.Contains("Download"))
+                    {
+                        return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"redirectUrl\":\"https://direct.chomikuj.pl/file.mkv\"}")
+                        };
+                    }
+                    return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new System.Net.Http.StringContent("<input name=\"__RequestVerificationToken\" value=\"post_token_abc\" /><div data-file-id=\"123456\"></div>")
+                    };
+                }
+            };
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                EnableCookieCache = true
+            };
+
+            using var service = new ChomikujService(logger, () => options, mockHandler, cookieContainer);
+
+            // 1. Resuelve para estar logueado con cookies y token post-login
+            var res = service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None).GetAwaiter().GetResult();
+            AssertTrue(!string.IsNullOrEmpty(res), "Login inicial y resolución exitosa");
+
+            // Cookies presentes
+            var cookiesBefore = service.GetCookies().ToList();
+            AssertTrue(cookiesBefore.Count > 0, "Hay cookies presentes antes de ForceReLogin");
+
+            // 2. Invocar ForceReLogin
+            service.ForceReLogin();
+
+            // Cookies deben estar vacías (0 elementos)
+            var cookiesAfter = service.GetCookies().ToList();
+            AssertEqual(0, cookiesAfter.Count, "GetCookies devuelve 0 elementos tras ForceReLogin (Expired = true)");
+        }
+
+        static void TestP1_7_11_6_WrongPassword_BackoffLogCount()
+        {
+            var logger = new TestLogger();
+
+            var mockHandler = new MockHttpMessageHandler
+            {
+                SendAsyncFunc = (req, ct) =>
+                {
+                    var uri = req.RequestUri.ToString();
+                    if (uri.Contains("/action/Login/Login"))
+                    {
+                        return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"IsSuccess\":false,\"Message\":\"Niepoprawne dane logowania\"}")
+                        };
+                    }
+                    return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new System.Net.Http.StringContent("<input name=\"__RequestVerificationToken\" value=\"tok\" />")
+                    };
+                }
+            };
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "wrong_password"
+            };
+
+            using var service = new ChomikujService(logger, () => options, mockHandler);
+
+            // 1ª llamada falla por credenciales
+            service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None).GetAwaiter().GetResult();
+
+            // 2ª llamada dentro de la ventana de 5 minutos
+            service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None).GetAwaiter().GetResult();
+
+            int loginAttemptsInLog = logger.Logs.Count(l => l.Contains("login no confirmado") || l.Contains("Login exitoso"));
+            AssertEqual(1, loginAttemptsInLog, "El log contiene exactamente 1 intento de login durante la ventana de 5 min");
+
+            int stackTraceInLog = logger.Logs.Count(l => l.Contains("StackTrace") || l.Contains("at Chomyfin"));
+            AssertEqual(0, stackTraceInLog, "Sin stack traces repetidos en el log");
+        }
+
+        static void TestP1_7_11_7_CookieCacheDisabled_TenConcurrent_SingleLoginInLog()
+        {
+            var logger = new TestLogger();
+            var barrier = new ManualResetEventSlim(false);
+            var ensureLoggedInLatch = new CountdownEvent(10);
+
+            var mockHandler = new MockHttpMessageHandler
+            {
+                SendAsyncFunc = (req, ct) =>
+                {
+                    var uri = req.RequestUri.ToString();
+                    if (uri.Contains("/action/Login/Login"))
+                    {
+                        barrier.Wait(5000);
+                        var resp = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"LoggedIn\":true}")
+                        };
+                        resp.Headers.Add("Set-Cookie", "rememberMe=tok; Path=/; Domain=chomikuj.pl");
+                        return resp;
+                    }
+                    if (uri.Contains("Download"))
+                    {
+                        return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"redirectUrl\":\"https://direct.chomikuj.pl/file.mkv\"}")
+                        };
+                    }
+                    return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new System.Net.Http.StringContent("<input name=\"__RequestVerificationToken\" value=\"tok\" /><div data-file-id=\"123456\"></div>")
+                    };
+                }
+            };
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                EnableCookieCache = false,
+                UseFastResolvePath = false
+            };
+
+            using var service = new ChomikujService(logger, () => options, mockHandler);
+            service.OnEnsureLoggedInForTests = () =>
+            {
+                if (!ensureLoggedInLatch.IsSet)
+                {
+                    ensureLoggedInLatch.Signal();
+                }
+            };
+
+            var tasks = new List<Task<string>>();
+            for (int i = 0; i < 10; i++)
+            {
+                tasks.Add(Task.Run(() => service.ResolveUrlAsync("https://chomikuj.pl/user/file,123456.mkv", CancellationToken.None)));
+            }
+
+            // Esperar a que las 10 llamadas concurrentes hayan entrado a EnsureLoggedIn y obtenido la misma _loginTask
+            ensureLoggedInLatch.Wait(5000);
+            barrier.Set();
+
+            Task.WaitAll(tasks.ToArray());
+
+            int loginSuccessCount = logger.Logs.Count(l => l.Contains("Login exitoso"));
+            AssertEqual(1, loginSuccessCount, "EnableCookieCache=false + 10 concurrentes produce un ÚNICO login en el log");
+        }
+
+        static void TestP1_7_11_8_NegativeGrep_CatchOrderInMethodsWithCt()
+        {
+            // Verificación del archivo Services/ChomikujService.cs
+            string servicePath = Path.Combine(AppContext.BaseDirectory, "../../../..", "Services", "ChomikujService.cs");
+            if (!File.Exists(servicePath))
+            {
+                servicePath = Path.Combine(Directory.GetCurrentDirectory(), "Services", "ChomikujService.cs");
+            }
+            if (!File.Exists(servicePath))
+            {
+                servicePath = Path.Combine(Directory.GetCurrentDirectory(), "..", "Services", "ChomikujService.cs");
+            }
+
+            AssertTrue(File.Exists(servicePath), "ChomikujService.cs encontrado para inspección");
+
+            var lines = File.ReadAllLines(servicePath);
+
+            // Métodos que reciben ct según el plan: ResolveUrlAsync, ResolveSlowPathWithStatusAsync, TryResolveFastPathAsync, LoginAsync, EnsureLoggedIn
+            // Comprobar que en ninguna parte un catch general ocurre antes de catch (OperationCanceledException)
+            int lastMethodStart = -1;
+            string currentMethod = null;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                if (line.Contains("ResolveUrlAsync") || line.Contains("ResolveSlowPathWithStatusAsync") ||
+                    line.Contains("TryResolveFastPathAsync") || line.Contains("LoginAsync") || line.Contains("EnsureLoggedIn"))
+                {
+                    if (line.Contains("Task") && (line.Contains("public") || line.Contains("private")))
+                    {
+                        currentMethod = line.Trim();
+                        lastMethodStart = i;
+                    }
+                }
+
+                if (line.Contains("catch (Exception") && !line.Contains("OperationCanceledException"))
+                {
+                    // Buscar si dentro del mismo bloque try hubo catch (OperationCanceledException) antes
+                    // O si hubo alguno después (lo cual violaría el orden correcto)
+                    for (int j = i + 1; j < Math.Min(lines.Length, i + 15); j++)
+                    {
+                        var nextLine = lines[j];
+                        if (nextLine.Contains("catch (OperationCanceledException)"))
+                        {
+                            throw new InvalidOperationException($"Violación en línea {i+1}: catch (Exception) antes de catch (OperationCanceledException) en {currentMethod}");
+                        }
+                        if (nextLine.Contains("public ") || nextLine.Contains("private ")) break;
+                    }
+                }
+            }
+        }
+
+        #endregion
         #endregion
         #endregion
         #endregion

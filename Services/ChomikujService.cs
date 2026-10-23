@@ -45,7 +45,8 @@ namespace Chomyfin
         private readonly object _stateLock = new object();
 
         private volatile bool _isLoggedIn;
-        private Task _loginTask;
+        private Task<bool> _loginTask;
+        private int _loginGeneration;
         private DateTime _lastSuccessfulLoginUtc = DateTime.MinValue;
         private DateTime _lastLoginAttemptUtc = DateTime.MinValue;
         private volatile string _postLoginToken;
@@ -63,6 +64,7 @@ namespace Chomyfin
 
         private SemaphoreSlim _semaphore;
         private int _semaphoreMax = -1;
+        internal Action OnEnsureLoggedInForTests;
 
         // Backoff entre reintentos de login (credenciales inválidas / sitio caído):
         // evita martillear chomikuj.pl en cada intento de reproducción.
@@ -84,11 +86,16 @@ namespace Chomyfin
         /// que los cambios de opciones se apliquen sin reiniciar.
         /// </param>
         public ChomikujService(ILogger logger, Func<ChomyfinOptions> getOptions)
+            : this(logger, getOptions, null)
+        {
+        }
+
+        internal ChomikujService(ILogger logger, Func<ChomyfinOptions> getOptions, HttpMessageHandler messageHandler, CookieContainer cookieContainer = null)
         {
             _logger = logger;
             _getOptions = getOptions;
-            _cookieContainer = new CookieContainer();
-            var handler = new HttpClientHandler
+            _cookieContainer = cookieContainer ?? new CookieContainer();
+            var handler = messageHandler ?? new HttpClientHandler
             {
                 CookieContainer = _cookieContainer,
                 AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
@@ -103,6 +110,7 @@ namespace Chomyfin
             lock (_stateLock)
             {
                 _loginTask = null;
+                _loginGeneration++;
                 _isLoggedIn = false;
                 _lastSuccessfulLoginUtc = DateTime.MinValue;
                 _lastLoginAttemptUtc = DateTime.MinValue;
@@ -110,6 +118,11 @@ namespace Chomyfin
                 _fastPathConsecutiveFailures = 0;
                 _isCircuitBreakerOpen = false;
                 _slowPathOnlyFolders.Clear();
+
+                foreach (Cookie c in _cookieContainer.GetCookies(new Uri("https://chomikuj.pl/")))
+                {
+                    c.Expired = true;
+                }
             }
         }
 
@@ -119,7 +132,7 @@ namespace Chomyfin
             catch (Exception ex) { _logger.ErrorException("Chomyfin: error leyendo opciones", ex); return null; }
         }
 
-        private Task EnsureLoggedIn()
+        private Task<bool> EnsureLoggedIn()
         {
             var options = SafeGetOptions();
             bool cacheEnabled = options?.EnableCookieCache ?? true;
@@ -143,21 +156,27 @@ namespace Chomyfin
 
                 if (shouldLogin)
                 {
-                    _isLoggedIn = false;
-                    _lastLoginAttemptUtc = DateTime.UtcNow;
-                    _loginTask = LoginAsync();
+                    if (_loginTask == null || _loginTask.IsCompleted)
+                    {
+                        _isLoggedIn = false;
+                        _lastLoginAttemptUtc = DateTime.UtcNow;
+                        int currentGen = ++_loginGeneration;
+                        _loginTask = LoginAsync(currentGen);
+                    }
                 }
+                OnEnsureLoggedInForTests?.Invoke();
                 return _loginTask;
             }
         }
 
-        private async Task LoginAsync()
+        private async Task<bool> LoginAsync(int generation)
         {
+            await Task.Yield();
             var config = SafeGetOptions();
             if (config == null || string.IsNullOrEmpty(config.Username) || string.IsNullOrEmpty(config.Password))
             {
                 _logger.Warn("Chomyfin: no hay credenciales de Chomikuj configuradas; no se podrán resolver URLs de página.");
-                return;
+                return false;
             }
 
             var mainPage = await _httpClient.GetStringAsync("https://chomikuj.pl/").ConfigureAwait(false);
@@ -203,13 +222,16 @@ namespace Chomyfin
                     {
                         lock (_stateLock)
                         {
-                            _isLoggedIn = true;
-                            _lastSuccessfulLoginUtc = DateTime.UtcNow;
-                            _sessionVerificationToken = token.Groups[1].Value;
-                            _postLoginToken = null;
-                            _fastPathConsecutiveFailures = 0;
-                            _isCircuitBreakerOpen = false;
-                            _slowPathOnlyFolders.Clear();
+                            if (_loginGeneration == generation)
+                            {
+                                _isLoggedIn = true;
+                                _lastSuccessfulLoginUtc = DateTime.UtcNow;
+                                _sessionVerificationToken = token.Groups[1].Value;
+                                _postLoginToken = null;
+                                _fastPathConsecutiveFailures = 0;
+                                _isCircuitBreakerOpen = false;
+                                _slowPathOnlyFolders.Clear();
+                            }
                         }
                         _logger.Info("Chomyfin: Login exitoso para el usuario {0}.", config.Username);
 
@@ -225,7 +247,10 @@ namespace Chomyfin
                                 {
                                     lock (_stateLock)
                                     {
-                                        _postLoginToken = postLoginMatch.Groups[1].Value;
+                                        if (_loginGeneration == generation)
+                                        {
+                                            _postLoginToken = postLoginMatch.Groups[1].Value;
+                                        }
                                     }
                                     _logger.Debug("Chomyfin: token post-login obtenido correctamente.");
                                 }
@@ -239,6 +264,8 @@ namespace Chomyfin
                                 _logger.Debug("Chomyfin: error al obtener el token post-login: {0}", ex.Message);
                             }
                         }
+
+                        return true;
                     }
                     else
                     {
@@ -251,6 +278,8 @@ namespace Chomyfin
                         string preview = sanitizedContent.Length > 300 ? sanitizedContent.Substring(0, 300) : sanitizedContent;
                         _logger.Warn("Chomyfin: login no confirmado (HTTP {0}, Motivo: {1}). Respuesta: {2}. Se reintentará en {3} min.",
                             (int)response.StatusCode, reason, preview.Replace("\r", " ").Replace("\n", " "), (int)LoginRetryDelay.TotalMinutes);
+
+                        return false;
                     }
                 }
             }
@@ -292,8 +321,8 @@ namespace Chomyfin
         /// </summary>
         public async Task<string> ResolveUrlAsync(string pageUrl, CancellationToken ct)
         {
-            await EnsureLoggedIn().ConfigureAwait(false);
-            if (!_isLoggedIn) return null;
+            bool loggedIn = await EnsureLoggedIn().ConfigureAwait(false);
+            if (!loggedIn) return null;
 
             var semaphore = GetCurrentSemaphore();
             await semaphore.WaitAsync(ct).ConfigureAwait(false);
@@ -340,7 +369,7 @@ namespace Chomyfin
 
                 return slowResult.DirectUrl;
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex) { _logger.ErrorException("Chomyfin: Error resolviendo URL", ex); }
             finally
             {
@@ -491,6 +520,10 @@ namespace Chomyfin
                     }
                 }
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.Warn("Chomyfin: no se pudo obtener el HTML de {0} ({1}). Intentando descarga con fileId conocido.", pageUrl, ex.Message);
@@ -596,6 +629,10 @@ namespace Chomyfin
                         _logger.Info("Chomyfin: Desbloqueando carpeta {0} (HTTP {1})", folderId, (int)response.StatusCode);
                     }
                 }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
