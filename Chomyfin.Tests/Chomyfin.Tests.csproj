@@ -22,6 +22,10 @@
     <Compile Include="..\Services\SoapLogSanitizer.cs" Link="Services\SoapLogSanitizer.cs" />
     <Compile Include="..\Services\SoapResponseParser.cs" Link="Services\SoapResponseParser.cs" />
     <Compile Include="..\Services\IChomikBoxClient.cs" Link="Services\IChomikBoxClient.cs" />
+    <Compile Include="..\Services\AtomicFile.cs" Link="Services\AtomicFile.cs" />
+    <Compile Include="..\Services\StrmCacheService.cs" Link="Services\StrmCacheService.cs" />
+    <Compile Include="..\Services\ChomikujUrlHelper.cs" Link="Services\ChomikujUrlHelper.cs" />
+    <Compile Include="..\Services\IChomikujService.cs" Link="Services\IChomikujService.cs" />
   </ItemGroup>
 
 </Project>

@@ -82,6 +82,14 @@ namespace Chomyfin.Tests
             RunTest("8.2 P1-5: AllowedExtensions con null -> 1ª lanza, 2ª funciona", TestP1_5_AllowedExtensionsNullItem_ReleasesLock);
             RunTest("8.3 P1-5: Concurrencia llamada activa -> llamada concurrente devuelve 'Ya hay una generación en curso' y semáforo sigue disponible después", TestP1_5_Concurrency_BusyReturnsErrorAndLockPreserved);
 
+            // 9. Pruebas P1-9
+            RunTest("9.1 P1-9: AtomicFile.WriteAllText crea fichero con contenido correcto (sin destino previo)", TestP1_9_WriteAllText_CreatesFile);
+            RunTest("9.2 P1-9: AtomicFile.WriteAllText reemplaza fichero existente sin corrupción (contenido nuevo íntegro)", TestP1_9_WriteAllText_ReplacesExistingFile);
+            RunTest("9.3 P1-9: Concurrencia 50 tareas GetOrResolveDirectUrlAsync y generador -> contenido final es URL completa válida, sin *.tmp huérfanos", TestP1_9_Concurrency_50Tasks_ValidContentNoOrphanTmp);
+            RunTest("9.4 P1-9: >50 entradas y 200 adquisiciones concurrentes -> dos hilos nunca ejecutan la sección crítica a la vez", TestP1_9_Concurrency_200Acquisitions_MutualExclusion);
+            RunTest("9.5 P1-9: Test negativo: si falla .original (directorio solo lectura), .strm conserva su contenido anterior", TestP1_9_Negative_OriginalFails_StrmPreserved);
+            RunTest("9.6 P1-9: MaybeCleanupLocks: >50 entradas, purga retira RefCount==0 y NO retira hilos en WaitAsync", TestP1_9_MaybeCleanupLocks_RetainsActiveWaiters);
+
             Console.WriteLine("\n===========================================");
             Console.WriteLine($"TOTAL PRUEBAS: {_passed + _failed} | PASADAS: {_passed} | FALLADAS: {_failed}");
             Console.WriteLine("===========================================");
@@ -1196,6 +1204,309 @@ namespace Chomyfin.Tests
                 var result3 = generator.GenerateAsync(options).GetAwaiter().GetResult();
                 AssertTrue(result3.Success, "Una tercera llamada tras completar la primera adquiere el lock con éxito");
                 AssertFalse(result3.Message.Contains("Ya hay una generación"), "No devuelve 'Ya hay una generación'");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        #endregion
+
+        #region P1-9 Tests
+
+        static void TestP1_9_WriteAllText_CreatesFile()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p19_1_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var filePath = Path.Combine(tempDir, "test.strm");
+                var content = "https://chomikuj.pl/user/film.mkv";
+                AtomicFile.WriteAllText(filePath, content);
+
+                AssertTrue(File.Exists(filePath), "El fichero fue creado");
+                var read = File.ReadAllText(filePath, Encoding.UTF8);
+                AssertEqual(content, read, "El contenido del fichero creado coincide");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestP1_9_WriteAllText_ReplacesExistingFile()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p19_2_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var filePath = Path.Combine(tempDir, "test.strm");
+                var contentInitial = "https://chomikuj.pl/initial";
+                var contentUpdated = "https://storage.chomikuj.pl/direct/updated-video.mkv";
+
+                AtomicFile.WriteAllText(filePath, contentInitial);
+                AssertEqual(contentInitial, File.ReadAllText(filePath, Encoding.UTF8), "Contenido inicial coincide");
+
+                AtomicFile.WriteAllText(filePath, contentUpdated);
+                AssertEqual(contentUpdated, File.ReadAllText(filePath, Encoding.UTF8), "Contenido reemplazado íntegro");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        private class FakeChomikujDirectService : IChomikujService
+        {
+            public string UserAgent => "TestAgent";
+            public Task<string> ResolveUrlAsync(string pageUrl, CancellationToken ct)
+            {
+                return Task.FromResult("https://s123.chomikuj.pl/download/resolved_url_direct.mkv");
+            }
+            public IEnumerable<string> GetCookies() => new List<string>();
+            public void ForceReLogin() { }
+        }
+
+        public class FakeFileSystemProxy : System.Reflection.DispatchProxy
+        {
+            protected override object Invoke(System.Reflection.MethodInfo targetMethod, object[] args)
+            {
+                if (targetMethod.Name == "FileExists")
+                {
+                    return File.Exists((string)args[0]);
+                }
+                if (targetMethod.Name == "DirectoryExists")
+                {
+                    return Directory.Exists((string)args[0]);
+                }
+                if (targetMethod.Name == "GetLastWriteTimeUtc")
+                {
+                    var dt = File.GetLastWriteTimeUtc((string)args[0]);
+                    if (targetMethod.ReturnType == typeof(DateTimeOffset))
+                    {
+                        return new DateTimeOffset(dt);
+                    }
+                    return dt;
+                }
+                if (targetMethod.Name == "ReadAllText")
+                {
+                    return File.ReadAllText((string)args[0], Encoding.UTF8);
+                }
+                if (targetMethod.Name == "ReadAllTextAsync")
+                {
+                    return Task.FromResult(File.ReadAllText((string)args[0], Encoding.UTF8));
+                }
+                if (targetMethod.Name == "WriteAllTextAsync")
+                {
+                    AtomicFile.WriteAllText((string)args[0], (string)args[1]);
+                    return Task.CompletedTask;
+                }
+                return null;
+            }
+
+            public static MediaBrowser.Model.IO.IFileSystem Create()
+            {
+                return System.Reflection.DispatchProxy.Create<MediaBrowser.Model.IO.IFileSystem, FakeFileSystemProxy>();
+            }
+        }
+
+        static void TestP1_9_Concurrency_50Tasks_ValidContentNoOrphanTmp()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p19_3_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var strmPath = Path.Combine(tempDir, "Pelicula.strm");
+                var pageUrl = "https://chomikuj.pl/cinefilo/Pelicula,123456.mkv";
+                File.WriteAllText(strmPath, pageUrl, Encoding.UTF8);
+
+                var fs = FakeFileSystemProxy.Create();
+                var chomikService = new FakeChomikujDirectService();
+                var cacheService = new StrmCacheService(new TestLogger(), fs, () => chomikService);
+
+                var fakeBoxClient = new FakeChomikBoxClient
+                {
+                    OnGetSubfolders = (id, path) => new List<ChomikFolderInfo>(),
+                    OnGetFilesInFolder = (id, path) => FolderFilesResult.CreateFiles(new List<ChomikFileInfo>
+                    {
+                        new ChomikFileInfo("123456", "Pelicula.mkv", "/Pelicula.mkv", 1024)
+                    })
+                };
+                var generator = new StrmGenerator(new TestLogger(), opt => fakeBoxClient);
+                var genOptions = new StrmGeneratorOptions
+                {
+                    Username = "cinefilo",
+                    Password = "pwd",
+                    DestinationPath = tempDir,
+                    OverwritePolicy = StrmOverwritePolicy.UpdateIfUrlChanged
+                };
+
+                var tasks = new List<Task>();
+                for (int i = 0; i < 50; i++)
+                {
+                    if (i % 2 == 0)
+                    {
+                        tasks.Add(Task.Run(async () =>
+                        {
+                            await cacheService.GetOrResolveDirectUrlAsync(strmPath, forceResolve: false, CancellationToken.None);
+                        }));
+                    }
+                    else
+                    {
+                        tasks.Add(Task.Run(async () =>
+                        {
+                            await generator.GenerateAsync(genOptions);
+                        }));
+                    }
+                }
+
+                Task.WaitAll(tasks.ToArray());
+
+                // Verificar contenido final de Pelicula.strm
+                AssertTrue(File.Exists(strmPath), "Pelicula.strm existe");
+                var finalContent = File.ReadAllText(strmPath, Encoding.UTF8).Trim();
+                AssertTrue(finalContent.Length > 0, "Pelicula.strm no está vacío");
+                AssertTrue(finalContent.StartsWith("http", StringComparison.OrdinalIgnoreCase), "Pelicula.strm tiene URL completa válida");
+
+                // Verificar que no quedan ficheros temporales .tmp
+                var tmpFiles = Directory.GetFiles(tempDir, "*.tmp*");
+                AssertEqual(0, tmpFiles.Length, "No hay archivos temporales *.tmp huérfanos");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestP1_9_Concurrency_200Acquisitions_MutualExclusion()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p19_4_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                // Crear > 50 rutas para poblar el diccionario
+                for (int i = 0; i < 60; i++)
+                {
+                    var dummyPath = Path.Combine(tempDir, $"dummy_{i}.strm");
+                    using (AtomicFile.AcquireLockAsync(dummyPath).GetAwaiter().GetResult())
+                    {
+                    }
+                }
+
+                // Ahora 200 adquisiciones concurrentes sobre la misma clave
+                var sharedPath = Path.Combine(tempDir, "shared_resource.strm");
+                int concurrentInCriticalSection = 0;
+                int maxConcurrencyObserved = 0;
+                var tasks = new List<Task>();
+
+                for (int i = 0; i < 200; i++)
+                {
+                    tasks.Add(Task.Run(async () =>
+                    {
+                        using (await AtomicFile.AcquireLockAsync(sharedPath))
+                        {
+                            var count = Interlocked.Increment(ref concurrentInCriticalSection);
+                            var currentMax = maxConcurrencyObserved;
+                            while (count > currentMax)
+                            {
+                                Interlocked.CompareExchange(ref maxConcurrencyObserved, count, currentMax);
+                                currentMax = maxConcurrencyObserved;
+                            }
+                            await Task.Delay(1);
+                            Interlocked.Decrement(ref concurrentInCriticalSection);
+                        }
+                    }));
+                }
+
+                Task.WaitAll(tasks.ToArray());
+
+                AssertEqual(1, maxConcurrencyObserved, "Máxima concurrencia en la sección crítica fue exactamente 1");
+                AssertEqual(0, concurrentInCriticalSection, "Todas las secciones críticas fueron liberadas");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestP1_9_Negative_OriginalFails_StrmPreserved()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p19_5_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var strmPath = Path.Combine(tempDir, "movie.strm");
+                var originalStrmPath = Path.Combine(tempDir, "movie.original");
+                var initialContent = "https://chomikuj.pl/user/movie,999.mkv";
+                File.WriteAllText(strmPath, initialContent, Encoding.UTF8);
+
+                // Forzamos un subdirectorio bloqueado como .original para provocar IOException al escribir
+                // En Linux podemos crear un directorio con el nombre movie.original para que AtomicFile falle al escribir
+                Directory.CreateDirectory(originalStrmPath);
+
+                var fs = FakeFileSystemProxy.Create();
+                var chomikService = new FakeChomikujDirectService();
+                var cacheService = new StrmCacheService(new TestLogger(), fs, () => chomikService);
+
+                // La llamada a GetOrResolveDirectUrlAsync debe atrapar la excepción de .original, no actualizar .strm y no corromperlo
+                var resolved = cacheService.GetOrResolveDirectUrlAsync(strmPath, forceResolve: false, CancellationToken.None).GetAwaiter().GetResult();
+
+                // El fichero .strm no debió ser sobrescrito con el directUrl resuelto porque original falló
+                var currentStrm = File.ReadAllText(strmPath, Encoding.UTF8).Trim();
+                AssertEqual(initialContent, currentStrm, "El contenido de .strm se preserva intacto si la escritura de .original falla");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestP1_9_MaybeCleanupLocks_RetainsActiveWaiters()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_p19_6_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                // Crear 60 claves sin contención para que RefCount sea 0
+                for (int i = 0; i < 60; i++)
+                {
+                    var p = Path.Combine(tempDir, $"item_{i}.strm");
+                    using (AtomicFile.AcquireLockAsync(p).GetAwaiter().GetResult())
+                    {
+                    }
+                }
+
+                // Clave activa con un lock adquirido
+                var activePath = Path.Combine(tempDir, "active_waiter.strm");
+                var enteredLock = new ManualResetEventSlim(false);
+                var releaseLock = new ManualResetEventSlim(false);
+
+                var activeTask = Task.Run(async () =>
+                {
+                    using (await AtomicFile.AcquireLockAsync(activePath))
+                    {
+                        enteredLock.Set();
+                        releaseLock.Wait(5000);
+                    }
+                });
+
+                AssertTrue(enteredLock.Wait(3000), "El hilo activo entró al lock");
+
+                // Ejecutamos purga forzada
+                AtomicFile.MaybeCleanupLocks(force: true);
+
+                // Verificamos que activePath sigue teniendo RefCount > 0 y NO fue retirado
+                AssertTrue(AtomicFile.TryGetRefCount(activePath, out var refCount), "activePath sigue registrado en el diccionario");
+                AssertTrue(refCount > 0, "activePath tiene RefCount > 0");
+
+                // Liberamos el lock
+                releaseLock.Set();
+                activeTask.GetAwaiter().GetResult();
+
+                // Ahora con RefCount == 0, purga forzada sí debe retirarlo
+                AtomicFile.MaybeCleanupLocks(force: true);
+                AssertFalse(AtomicFile.TryGetRefCount(activePath, out _), "activePath fue retirado tras finalizar (RefCount == 0)");
             }
             finally
             {

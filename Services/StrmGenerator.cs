@@ -393,17 +393,22 @@ namespace Chomyfin.Services
                         cancellationToken.ThrowIfCancellationRequested();
                         var file = discoveredFiles[i];
                         var (safeRelativeDir, assignedStrmName) = fileAssignments[file];
+                        var targetStrmPath = Path.Combine(fullDestinationPath, safeRelativeDir, assignedStrmName + ".strm");
 
                         try
                         {
-                            var processStatus = ProcessFileStrm(
-                                options.Username,
-                                file,
-                                safeRelativeDir,
-                                assignedStrmName,
-                                fullDestinationPath,
-                                options.OverwritePolicy,
-                                generatedStrmFiles);
+                            FileProcessStatus processStatus;
+                            using (await AtomicFile.AcquireLockAsync(targetStrmPath, cancellationToken).ConfigureAwait(false))
+                            {
+                                processStatus = ProcessFileStrm(
+                                    options.Username,
+                                    file,
+                                    safeRelativeDir,
+                                    assignedStrmName,
+                                    fullDestinationPath,
+                                    options.OverwritePolicy,
+                                    generatedStrmFiles);
+                            }
 
                             switch (processStatus)
                             {
@@ -683,7 +688,7 @@ namespace Chomyfin.Services
 
             if (!File.Exists(fullStrmPath))
             {
-                File.WriteAllText(fullStrmPath, expectedUrl, Encoding.UTF8);
+                AtomicFile.WriteAllText(fullStrmPath, expectedUrl, Encoding.UTF8);
                 return FileProcessStatus.Created;
             }
 
@@ -709,7 +714,7 @@ namespace Chomyfin.Services
 
             if (policy == StrmOverwritePolicy.UpdateIfUrlChanged)
             {
-                File.WriteAllText(fullStrmPath, expectedUrl, Encoding.UTF8);
+                AtomicFile.WriteAllText(fullStrmPath, expectedUrl, Encoding.UTF8);
                 if (File.Exists(originalPath))
                 {
                     try { File.Delete(originalPath); } catch (Exception ex) { _logger?.Debug("[StrmGenerator] Error eliminando {0}: {1}", originalPath, ex.ToString()); }
