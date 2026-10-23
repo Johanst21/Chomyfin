@@ -25,7 +25,7 @@ namespace Chomyfin.ScheduledTasks
         {
         }
 
-        public StrmSyncTask(ILibraryMonitor libraryMonitor, ILogManager logManager, Func<ILogger, StrmGenerator> generatorFactory)
+        internal StrmSyncTask(ILibraryMonitor libraryMonitor, ILogManager logManager, Func<ILogger, StrmGenerator> generatorFactory)
         {
             _libraryMonitor = libraryMonitor;
             _logger = logManager.GetLogger(Name);
