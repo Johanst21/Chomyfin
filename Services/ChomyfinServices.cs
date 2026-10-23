@@ -73,5 +73,17 @@ namespace Chomyfin.Services
         {
             EnsureServices(fileSystem, null);
         }
+
+        internal static void ResetForTests()
+        {
+            Logger = null;
+            OptionsAccessor = null;
+            ChomikujService = null;
+            StrmCacheService = null;
+            SiblingFinder = null;
+            SiblingResolutionQueue = null;
+            PluginDataPath = null;
+            SyncStatusStore.ResetForTests();
+        }
     }
 }

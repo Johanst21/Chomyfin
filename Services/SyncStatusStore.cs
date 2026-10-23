@@ -56,6 +56,25 @@ namespace Chomyfin.Services
             }
         }
 
+        public void ResetForTests()
+        {
+            lock (_syncLock)
+            {
+                IsRunning = false;
+                LastStartTimeUtc = null;
+                LastEndTimeUtc = null;
+                LastSuccess = null;
+                LastMessage = null;
+                FilesDiscovered = 0;
+                FilesCreated = 0;
+                FilesUpdated = 0;
+                FilesSkipped = 0;
+                FilesFailed = 0;
+                OrphansDeleted = 0;
+                Errors.Clear();
+            }
+        }
+
         public string GetSummaryString()
         {
             lock (_syncLock)

@@ -18,11 +18,18 @@ namespace Chomyfin.ScheduledTasks
     {
         private readonly ILibraryMonitor _libraryMonitor;
         private readonly ILogger _logger;
+        private readonly Func<ILogger, StrmGenerator> _generatorFactory;
 
         public StrmSyncTask(ILibraryMonitor libraryMonitor, ILogManager logManager)
+            : this(libraryMonitor, logManager, null)
+        {
+        }
+
+        public StrmSyncTask(ILibraryMonitor libraryMonitor, ILogManager logManager, Func<ILogger, StrmGenerator> generatorFactory)
         {
             _libraryMonitor = libraryMonitor;
             _logger = logManager.GetLogger(Name);
+            _generatorFactory = generatorFactory ?? (l => new StrmGenerator(l));
         }
 
         public string Name => "Chomyfin: sincronizar .strm de Chomikuj";
@@ -86,7 +93,7 @@ namespace Chomyfin.ScheduledTasks
                 DiagnosticsDirectory = ChomyfinServices.PluginDataPath != null ? System.IO.Path.Combine(ChomyfinServices.PluginDataPath, "diag") : null
             };
 
-            var generator = new StrmGenerator(_logger);
+            var generator = _generatorFactory(_logger);
             StrmGeneratorResult result = null;
 
             try
