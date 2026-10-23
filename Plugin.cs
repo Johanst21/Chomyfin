@@ -87,11 +87,6 @@ namespace Chomyfin
 
         protected override ChomyfinOptions OnBeforeShowUI(ChomyfinOptions options)
         {
-            // Actualizar la descripción del estado antes de renderizar la página de configuración
-            if (options != null)
-            {
-                options.LastSyncStatus = ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? "No disponible.";
-            }
             return base.OnBeforeShowUI(options);
         }
 

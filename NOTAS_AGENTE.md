@@ -34,6 +34,18 @@
   4. Inspeccionar los logs de Emby y verificar que NO aparece ninguna entrada del tipo `"Chomyfin: error iniciando resolución de hermanos para ..."` ni `"Error buscando versiones hermanas para ..."`.
   5. Comprobar que la reproducción del ítem principal comienza inmediatamente sin latencia y que las versiones hermanas se resuelven en segundo plano.
 
+## [VERIFICAR EN LOCAL]
+- **P0-1 (Reproducción y cookies)**: Probar reproducción en clientes Emby reales (web, Android TV, etc.) para confirmar que los reproductores nativos manejan las URLs directas de Chomikuj sin necesidad de inyectar cookies en `RequiredHttpHeaders`.
+- **P0-4 (Borrado de huérfanos y colisiones)**: Ejecutar sincronización manual con `OrphansDryRun=false` y `DeleteOrphans=true` en una carpeta con ficheros previamente sincronizados para verificar que no elimina `.strm` fuera del scope configurado, y comprobar que ficheros con nombres colisionantes se desambiguan correctamente como `[ext]`.
+- **P1-8 (BaseItem en hilos en segundo plano)**: Abrir contenidos con versiones hermanas y vigilar en los logs que no surjan errores de contexto de sesión o `ObjectDisposedException` al ejecutarse `FindSiblings` en `Task.Run`.
+- **P1-10 (UI de configuración y persistencia de LastSyncStatus)**: Abrir la UI de configuración del plugin en Emby real. Verificar que la propiedad `LastSyncStatus` se muestra (o que no rompe el guardado) y que NO se persiste en el XML de configuración (`/config/plugins/configurations/Chomyfin.xml`).
+
+## Borrador de Notas de Release 1.0.0
+1. **Migración SelectedFolders**: La propiedad `CustomScanPath` reemplaza definitivamente a la clave legada `SelectedFolders`. Si se utilizaban listas de carpetas separadas por comas, se leen de forma transparente y se filtran entradas espurias.
+2. **Cookies y redirectUrl**: Se eliminó la inyección de cookies de sesión en `MediaSourceInfo.RequiredHttpHeaders` para evitar fugas de sesión a reproductores clientes y errores de reproducción en clientes estrictos; la autenticación de streaming viaja en los tokens de la propia URL de descarga generada.
+3. **Manejo de colisiones en .strm**: Cuando existen múltiples archivos en Chomikuj con el mismo nombre base y diferente extensión de video en la misma carpeta remota, el generador desambigua añadiendo la extensión entre corchetes (ej. `Película [mp4].strm`) preservando el mapeo a través de archivos `.original` y evitando sobrescrituras silenciosas.
+4. **OrphansDryRun por defecto y endpoints Admin**: Por seguridad para evitar pérdida de datos accidental, `OrphansDryRun` viene activado por defecto (`true`) impidiendo borrados automáticos hasta que el usuario lo desactive explícitamente. Todos los endpoints REST administrativos (`/Chomyfin/*`) ahora exigen permisos de administrador (`Request.IsAdmin()` / roles autorizados), protegiendo la invocación no autorizada de tareas de sincronización y generación.
+
 
 
 

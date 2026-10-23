@@ -26,7 +26,6 @@ namespace Chomyfin.Configuration
             OrphansDryRun = true;
             AutoSyncEnabled = false;
             RefreshLibraryAfterSync = false;
-            LastSyncStatus = "No se ha ejecutado ninguna sincronización aún.";
             EnableSoapDiagnostics = false;
 
             // Opciones Tarea 1: Versiones hermanas
@@ -101,9 +100,9 @@ namespace Chomyfin.Configuration
         [Description("Registra el XML crudo de la API SOAP; solo para depurar")]
         public bool EnableSoapDiagnostics { get; set; }
 
-                [DisplayName("Estado de la última sincronización")]
+        [DisplayName("Estado de la última sincronización")]
         [Description("Información sobre la última sincronización ejecutada.")]
-        public string LastSyncStatus { get; set; }
+        public string LastSyncStatus => Chomyfin.Services.ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? "No disponible.";
 
         // --- Rendimiento y caché ---
 
