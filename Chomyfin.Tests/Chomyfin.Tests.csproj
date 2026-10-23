@@ -10,6 +10,13 @@
 
   <ItemGroup>
     <!-- Incluir directamente los archivos de lógica pura requeridos sin arrastrar el SDK de Emby -->
+    <PackageReference Include="mediabrowser.common" Version="4.10.0.24-beta2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Services\StrmGenerator.cs" Link="Services\StrmGenerator.cs" />
+    <Compile Include="..\Services\ChomikBoxClient.cs" Link="Services\ChomikBoxClient.cs" />
+    <Compile Include="..\Models\StrmGeneratorModels.cs" Link="Models\StrmGeneratorModels.cs" />
     <Compile Include="..\Models\ChomikFileInfo.cs" Link="Models\ChomikFileInfo.cs" />
     <Compile Include="..\Models\ChomikFolderInfo.cs" Link="Models\ChomikFolderInfo.cs" />
     <Compile Include="..\Services\SoapLogSanitizer.cs" Link="Services\SoapLogSanitizer.cs" />
