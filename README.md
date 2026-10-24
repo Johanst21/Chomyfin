@@ -30,7 +30,7 @@ This version represents a stable, functional baseline prior to applying security
 
 ## Release
 *   **Chomyfin 0.9.0.0-beta** (Pre-release)
-*   https://github.com/Johanst21/Chomyfin/releases/tag/v0.8.7.0-beta
+*   https://github.com/Johanst21/Chomyfin/releases/tag/0.9.0.0-beta
 
 ## License
 *   Distributed under the project's software use license.
