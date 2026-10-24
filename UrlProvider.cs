@@ -68,7 +68,7 @@ namespace Chomyfin
             string directUrl;
             if (cacheService != null)
             {
-                directUrl = await cacheService.GetOrResolveDirectUrlAsync(item.Path, false, cancellationToken).ConfigureAwait(false);
+                directUrl = await cacheService.GetOrResolveDirectUrlAsync(item.Path, false, CancellationToken.None).ConfigureAwait(false);
             }
             else
             {
@@ -76,29 +76,32 @@ namespace Chomyfin
                 return new List<MediaSourceInfo>();
             }
 
-            // 2. Encolar resolución de hermanos en segundo plano (fire-and-forget)
-            try
+            // 2. Encolar resolución de hermanos en segundo plano (fire-and-forget fuera del camino de reproducción)
+            Task.Run(() =>
             {
-                var options = ChomyfinServices.OptionsAccessor?.Invoke();
-                if (options != null && options.ResolveSiblingVersions)
+                try
                 {
-                    var finder = ChomyfinServices.SiblingFinder;
-                    var queue = ChomyfinServices.SiblingResolutionQueue;
-
-                    if (finder != null && queue != null)
+                    var options = ChomyfinServices.OptionsAccessor?.Invoke();
+                    if (options != null && options.ResolveSiblingVersions)
                     {
-                        var siblings = finder.FindSiblings(item, options.MaxSiblingsPerOpen);
-                        if (siblings != null && siblings.Count > 0)
+                        var finder = ChomyfinServices.SiblingFinder;
+                        var queue = ChomyfinServices.SiblingResolutionQueue;
+
+                        if (finder != null && queue != null)
                         {
-                            queue.EnqueueSiblings(siblings, item.Path);
+                            var siblings = finder.FindSiblings(item, options.MaxSiblingsPerOpen);
+                            if (siblings != null && siblings.Count > 0)
+                            {
+                                queue.EnqueueSiblings(siblings, item.Path);
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.ErrorException("Chomyfin: error iniciando resolución de hermanos para " + item.Path, ex);
-            }
+                catch (Exception ex)
+                {
+                    _logger.ErrorException("Chomyfin: error iniciando resolución de hermanos para " + item.Path, ex);
+                }
+            });
 
             // 3. Solo servimos una URL de descarga directa (http/https).
             if (string.IsNullOrWhiteSpace(directUrl) || !ChomikujUrlHelper.IsDirectUrl(directUrl))
@@ -130,14 +133,9 @@ namespace Chomyfin
             };
 
             var service = ChomyfinServices.ChomikujService;
-            if (service != null)
+            if (service != null && !string.IsNullOrEmpty(service.UserAgent))
             {
-                var cookies = service.GetCookies();
-                if (cookies.Any())
-                {
-                    source.RequiredHttpHeaders["Cookie"] = string.Join("; ", cookies);
-                    source.RequiredHttpHeaders["User-Agent"] = service.UserAgent;
-                }
+                source.RequiredHttpHeaders["User-Agent"] = service.UserAgent;
             }
 
             return new List<MediaSourceInfo> { source };

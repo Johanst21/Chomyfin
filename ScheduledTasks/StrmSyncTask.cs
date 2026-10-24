@@ -18,11 +18,18 @@ namespace Chomyfin.ScheduledTasks
     {
         private readonly ILibraryMonitor _libraryMonitor;
         private readonly ILogger _logger;
+        private readonly Func<ILogger, StrmGenerator> _generatorFactory;
 
         public StrmSyncTask(ILibraryMonitor libraryMonitor, ILogManager logManager)
+            : this(libraryMonitor, logManager, null)
+        {
+        }
+
+        internal StrmSyncTask(ILibraryMonitor libraryMonitor, ILogManager logManager, Func<ILogger, StrmGenerator> generatorFactory)
         {
             _libraryMonitor = libraryMonitor;
             _logger = logManager.GetLogger(Name);
+            _generatorFactory = generatorFactory ?? (l => new StrmGenerator(l));
         }
 
         public string Name => "Chomyfin: sincronizar .strm de Chomikuj";
@@ -81,16 +88,28 @@ namespace Chomyfin.ScheduledTasks
                 AllowedExtensions = options.GetAllowedVideoExtensionsList(),
                 OverwritePolicy = options.OverwritePolicy,
                 DeleteOrphans = options.DeleteOrphans,
+                OrphansDryRun = options.OrphansDryRun,
                 EnableSoapDiagnostics = options.EnableSoapDiagnostics,
                 DiagnosticsDirectory = ChomyfinServices.PluginDataPath != null ? System.IO.Path.Combine(ChomyfinServices.PluginDataPath, "diag") : null
             };
 
-            var generator = new StrmGenerator(_logger);
+            var generator = _generatorFactory(_logger);
             StrmGeneratorResult result = null;
 
             try
             {
                 result = await generator.GenerateAsync(genOptions, progress, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                result = new StrmGeneratorResult
+                {
+                    Success = false,
+                    Message = "Sincronización cancelada.",
+                    EndTime = DateTime.UtcNow
+                };
+                _logger.Info("Chomyfin: Sincronización cancelada.");
+                throw;
             }
             catch (Exception ex)
             {

@@ -471,7 +471,8 @@ namespace Chomyfin.Services
                     if (string.Equals(el.Name.LocalName, "Fault", StringComparison.OrdinalIgnoreCase))
                     {
                         var faultString = GetElementValue(el, "faultstring") ?? el.Value;
-                        _logger?.Error("[ChomikBoxClient] SOAP Fault recibido en {0}: {1}", action, faultString);
+                        var sanitizedFault = SoapLogSanitizer.Sanitize(faultString);
+                        _logger?.Error("[ChomikBoxClient] SOAP Fault recibido en {0}: {1}", action, sanitizedFault);
                         if (_enableSoapDiagnostics)
                         {
                             throw new InvalidOperationException($"SOAP Fault en {action}: {faultString}");

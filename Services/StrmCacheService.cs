@@ -26,38 +26,12 @@ namespace Chomyfin.Services
         private readonly IFileSystem _fileSystem;
         private readonly Func<IChomikujService> _getChomikujService;
         private static readonly TimeSpan LinkExpirationTime = TimeSpan.FromHours(23);
-        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _perFileLocks =
-            new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
-        private static int _lockAcquisitions = 0;
 
         public StrmCacheService(ILogger logger, IFileSystem fileSystem, Func<IChomikujService> getChomikujService)
         {
             _logger = logger;
             _fileSystem = fileSystem;
             _getChomikujService = getChomikujService;
-        }
-
-        private SemaphoreSlim GetPerFileLock(string key)
-        {
-            MaybeCleanupLocks();
-            return _perFileLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-        }
-
-        /// <summary>
-        /// Purga periódicamente bloqueos inactivos para evitar que el diccionario crezca indefinidamente.
-        /// </summary>
-        private static void MaybeCleanupLocks()
-        {
-            if (Interlocked.Increment(ref _lockAcquisitions) % 100 == 0 && _perFileLocks.Count > 50)
-            {
-                foreach (var entry in _perFileLocks)
-                {
-                    if (entry.Value.CurrentCount == 1)
-                    {
-                        _perFileLocks.TryRemove(entry.Key, out _);
-                    }
-                }
-            }
         }
 
         /// <summary>
@@ -98,9 +72,7 @@ namespace Chomyfin.Services
             var originalStrmPath = Path.ChangeExtension(strmPath, ".original");
             string chomikujUrl;
 
-            var fileLock = GetPerFileLock(strmPath);
-            await fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+            using (await AtomicFile.AcquireLockAsync(strmPath, cancellationToken).ConfigureAwait(false))
             {
                 var currentContent = (await _fileSystem.ReadAllTextAsync(strmPath).ConfigureAwait(false)).Trim();
 
@@ -174,7 +146,7 @@ namespace Chomyfin.Services
                 var originalOk = true;
                 try
                 {
-                    await _fileSystem.WriteAllTextAsync(originalStrmPath, chomikujUrl).ConfigureAwait(false);
+                    AtomicFile.WriteAllText(originalStrmPath, chomikujUrl);
                 }
                 catch (Exception ex)
                 {
@@ -189,7 +161,7 @@ namespace Chomyfin.Services
                 {
                     try
                     {
-                        await _fileSystem.WriteAllTextAsync(strmPath, directUrl).ConfigureAwait(false);
+                        AtomicFile.WriteAllText(strmPath, directUrl);
                         _logger.Info("Chomyfin: URL resuelta y cacheada para {0}", Path.GetFileName(strmPath));
                     }
                     catch (Exception ex)
@@ -200,16 +172,6 @@ namespace Chomyfin.Services
                 }
 
                 return directUrl;
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                _logger.ErrorException("Chomyfin: Error procesando " + strmPath, ex);
-                return null;
-            }
-            finally
-            {
-                fileLock.Release();
             }
         }
     }

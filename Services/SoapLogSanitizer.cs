@@ -13,6 +13,8 @@ namespace Chomyfin.Services
     public static class SoapLogSanitizer
     {
         private const string Mask = "***";
+        private const string ContentOmitted = "[contenido omitido: no sanitizable]";
+        private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
         /// <summary>
         /// Fragmentos sensibles en nombres locales de elementos o atributos a enmascarar.
@@ -25,7 +27,11 @@ namespace Chomyfin.Services
             "pass",
             "passhash",
             "token",
-            "secret"
+            "secret",
+            "cookie",
+            "authorization",
+            "rememberme",
+            "chomiksession"
         };
 
         /// <summary>
@@ -45,9 +51,73 @@ namespace Chomyfin.Services
             }
             catch
             {
-                // Si falla el parseo XML (truncado, HTML, texto no válido), aplicar regex
-                return SanitizeWithRegex(content);
+                // Si falla el parseo XML (truncado, HTML, texto no válido), aplicar fallback regex
+                string fallback = SanitizeWithRegex(content);
+                if (string.Equals(fallback, ContentOmitted, StringComparison.Ordinal))
+                {
+                    return ContentOmitted;
+                }
+
+                if (HasResidualSensitiveData(fallback))
+                {
+                    return ContentOmitted;
+                }
+
+                return fallback;
             }
+        }
+
+        private static bool IsPreservedBooleanName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            return name.StartsWith("has", StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("is", StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("use", StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("enable", StringComparison.OrdinalIgnoreCase) ||
+                   name.EndsWith("Required", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HasResidualSensitiveData(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+
+            try
+            {
+                foreach (var keyword in SensitiveKeywords)
+                {
+                    if (text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        continue;
+                    }
+
+                    // Busca palabra sensible seguida de =, : o > y un valor no vacío distinto de ***
+                    // 1) clave=valor o clave="valor" o clave:valor o clave:"valor"
+                    string patternKv = $@"(?i)\b{Regex.Escape(keyword)}\b\s*[=:]\s*(?!""\*{3}""|'\*{3}'|\*{3}(?:[\s,;""'<>}}]|$)|true\b|false\b)([^\s,;""'<>}}&]+)";
+                    var matchKv = Regex.Match(text, patternKv, RegexOptions.Singleline, RegexTimeout);
+                    if (matchKv.Success)
+                    {
+                        return true;
+                    }
+
+                    // 2) elemento XML abierto: <tag...keyword...>valor no enmascarado
+                    string patternTag = $@"(?i)<(?:\w+:)?[a-zA-Z0-9_\-\.]*{Regex.Escape(keyword)}[a-zA-Z0-9_\-\.]*(?:\s+[^>]*)?>\s*(?!\*{3}|true\b|false\b|\s*<)(?<val>[^\s<]+)";
+                    var matchTag = Regex.Match(text, patternTag, RegexOptions.Singleline, RegexTimeout);
+                    if (matchTag.Success)
+                    {
+                        string val = matchTag.Groups["val"].Value;
+                        if (!string.IsNullOrEmpty(val) && !val.StartsWith("***"))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static string SanitizeXml(string xml)
@@ -67,10 +137,11 @@ namespace Chomyfin.Services
                         continue;
                     }
 
-                    // Excepción para indicadores booleanos: si es "true" o "false", no ocultar
+                    // Excepción para indicadores booleanos: conservar true/false solo si empieza por has, is, use, enable
                     string val = element.Value?.Trim();
-                    if (string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(val, "false", StringComparison.OrdinalIgnoreCase))
+                    if ((string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(val, "false", StringComparison.OrdinalIgnoreCase)) &&
+                        IsPreservedBooleanName(element.Name.LocalName))
                     {
                         continue;
                     }
@@ -87,8 +158,9 @@ namespace Chomyfin.Services
                     if (IsSensitiveName(attr.Name.LocalName))
                     {
                         string val = attr.Value?.Trim();
-                        if (string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(val, "false", StringComparison.OrdinalIgnoreCase))
+                        if ((string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(val, "false", StringComparison.OrdinalIgnoreCase)) &&
+                            IsPreservedBooleanName(attr.Name.LocalName))
                         {
                             continue;
                         }
@@ -114,50 +186,169 @@ namespace Chomyfin.Services
                 return text;
             }
 
-            string result = text;
-
-            foreach (var keyword in SensitiveKeywords)
+            try
             {
-                // Elementos XML: <prefix:name ...>value</prefix:name>
-                // Coincide con cualquier elemento cuyo nombre local contenga la keyword
-                string patternElement = $@"(<(?:\w+:)?[^>]*{Regex.Escape(keyword)}[^>]*>)(.*?)(</(?:\w+:)?[^>]*{Regex.Escape(keyword)}[^>]*>)";
-                result = Regex.Replace(result, patternElement, match =>
-                {
-                    string openTag = match.Groups[1].Value;
-                    string val = match.Groups[2].Value;
-                    string closeTag = match.Groups[3].Value;
+                string result = text;
 
-                    string trimmed = val.Trim();
-                    if (string.Equals(trimmed, "true", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase))
+                // Cabeceras HTTP: Cookie, Set-Cookie, Authorization
+                string headerPattern = @"(?m)^([ \t]*(?:Set-Cookie|Cookie|Authorization)[ \t]*:[ \t]*)[^\r\n]+";
+                result = Regex.Replace(result, headerPattern, $"$1{Mask}", RegexOptions.IgnoreCase, RegexTimeout);
+
+                foreach (var keyword in SensitiveKeywords)
+                {
+                    if (text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0)
                     {
-                        return match.Value;
+                        continue;
                     }
 
-                    return $"{openTag}{Mask}{closeTag}";
-                }, RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-                // Atributos XML: name="value" o name='value'
-                string patternAttr = $@"\b((?:\w+:)?[a-zA-Z0-9_-]*{Regex.Escape(keyword)}[a-zA-Z0-9_-]*\s*=\s*)([""'])(.*?)([""'])";
-                result = Regex.Replace(result, patternAttr, match =>
-                {
-                    string prefix = match.Groups[1].Value;
-                    string quote1 = match.Groups[2].Value;
-                    string val = match.Groups[3].Value;
-                    string quote2 = match.Groups[4].Value;
-
-                    string trimmed = val.Trim();
-                    if (string.Equals(trimmed, "true", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase))
+                    // 1. Elementos XML cerrados: <prefix:name ...>value</prefix:name>
+                    string patternElement = $@"(?i)(<(?:\w+:)?[a-zA-Z0-9_\-\.]*{Regex.Escape(keyword)}[a-zA-Z0-9_\-\.]*(?:\s+[^>]*)?>)(.*?)(</(?:\w+:)?[a-zA-Z0-9_\-\.]*{Regex.Escape(keyword)}[a-zA-Z0-9_\-\.]*>)";
+                    result = Regex.Replace(result, patternElement, match =>
                     {
-                        return match.Value;
-                    }
+                        string openTag = match.Groups[1].Value;
+                        string val = match.Groups[2].Value;
+                        string closeTag = match.Groups[3].Value;
 
-                    return $"{prefix}{quote1}{Mask}{quote2}";
-                }, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                        string trimmed = val.Trim();
+                        if ((string.Equals(trimmed, "true", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase)) &&
+                            IsPreservedBooleanTag(openTag))
+                        {
+                            return match.Value;
+                        }
+
+                        return $"{openTag}{Mask}{closeTag}";
+                    }, RegexOptions.Singleline, RegexTimeout);
+
+                    // 2. Elementos XML abiertos sin cierre (p.ej. truncado): <tag...keyword...>valor hasta siguiente < o fin
+                    string patternOpenElement = $@"(?i)(<(?:\w+:)?[a-zA-Z0-9_\-\.]*{Regex.Escape(keyword)}[a-zA-Z0-9_\-\.]*(?:\s+[^>]*)?>)([^<]+)";
+                    result = Regex.Replace(result, patternOpenElement, match =>
+                    {
+                        string openTag = match.Groups[1].Value;
+                        string val = match.Groups[2].Value;
+
+                        string trimmed = val.Trim();
+                        if ((string.Equals(trimmed, "true", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase)) &&
+                            IsPreservedBooleanTag(openTag))
+                        {
+                            return match.Value;
+                        }
+
+                        return $"{openTag}{Mask}";
+                    }, RegexOptions.Singleline, RegexTimeout);
+
+                    // 3. Atributos XML: name="value" o name='value'
+                    string patternAttr = $@"(?i)\b((?:\w+:)?[a-zA-Z0-9_-]*{Regex.Escape(keyword)}[a-zA-Z0-9_-]*\s*=\s*)([""'])(.*?)([""'])";
+                    result = Regex.Replace(result, patternAttr, match =>
+                    {
+                        string prefix = match.Groups[1].Value;
+                        string quote1 = match.Groups[2].Value;
+                        string val = match.Groups[3].Value;
+                        string quote2 = match.Groups[4].Value;
+
+                        string trimmed = val.Trim();
+                        if ((string.Equals(trimmed, "true", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase)) &&
+                            IsPreservedBooleanAttrName(prefix))
+                        {
+                            return match.Value;
+                        }
+
+                        return $"{prefix}{quote1}{Mask}{quote2}";
+                    }, RegexOptions.Singleline, RegexTimeout);
+
+                    // 4. JSON: "clave" : "valor"
+                    string patternJsonString = $@"""([^""]*{Regex.Escape(keyword)}[^""]*)""(\s*:\s*)""([^""]*)""";
+                    result = Regex.Replace(result, patternJsonString, match =>
+                    {
+                        string key = match.Groups[1].Value;
+                        string colon = match.Groups[2].Value;
+                        string val = match.Groups[3].Value;
+
+                        if ((string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(val, "false", StringComparison.OrdinalIgnoreCase)) &&
+                            IsPreservedBooleanName(key))
+                        {
+                            return match.Value;
+                        }
+
+                        return $@"""{key}""{colon}""{Mask}""";
+                    }, RegexOptions.IgnoreCase, RegexTimeout);
+
+                    // 5. JSON: "clave" : valorNoString (p.ej. números, tokens sin comillas o booleanos)
+                    string patternJsonOther = $@"""([^""]*{Regex.Escape(keyword)}[^""]*)""(\s*:\s*)([^"",}}\s]+)";
+                    result = Regex.Replace(result, patternJsonOther, match =>
+                    {
+                        string key = match.Groups[1].Value;
+                        string colon = match.Groups[2].Value;
+                        string val = match.Groups[3].Value;
+
+                        if (string.Equals(val, $"\"{Mask}\"", StringComparison.Ordinal) ||
+                            string.Equals(val, Mask, StringComparison.Ordinal))
+                        {
+                            return match.Value;
+                        }
+
+                        if ((string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(val, "false", StringComparison.OrdinalIgnoreCase)) &&
+                            IsPreservedBooleanName(key))
+                        {
+                            return match.Value;
+                        }
+
+                        return $@"""{key}""{colon}""{Mask}""";
+                    }, RegexOptions.IgnoreCase, RegexTimeout);
+
+                    // 6. Pares clave=valor sin comillas (URLs query string / form-urlencoded)
+                    string patternKv = $@"(?i)(?<=[\?&;\s]|^)([a-zA-Z0-9_\-\.]*{Regex.Escape(keyword)}[a-zA-Z0-9_\-\.]*)=([^&;\s""'<>]+)";
+                    result = Regex.Replace(result, patternKv, match =>
+                    {
+                        string key = match.Groups[1].Value;
+                        string val = match.Groups[2].Value;
+
+                        if (string.Equals(val, Mask, StringComparison.Ordinal))
+                        {
+                            return match.Value;
+                        }
+
+                        if ((string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(val, "false", StringComparison.OrdinalIgnoreCase)) &&
+                            IsPreservedBooleanName(key))
+                        {
+                            return match.Value;
+                        }
+
+                        return $"{key}={Mask}";
+                    }, RegexOptions.IgnoreCase, RegexTimeout);
+                }
+
+                return result;
             }
+            catch (RegexMatchTimeoutException)
+            {
+                return ContentOmitted;
+            }
+        }
 
-            return result;
+        private static bool IsPreservedBooleanTag(string tag)
+        {
+            var match = Regex.Match(tag, @"<(?:\w+:)?([a-zA-Z0-9_-]+)", RegexOptions.None, RegexTimeout);
+            if (match.Success)
+            {
+                return IsPreservedBooleanName(match.Groups[1].Value);
+            }
+            return false;
+        }
+
+        private static bool IsPreservedBooleanAttrName(string attrPrefix)
+        {
+            var match = Regex.Match(attrPrefix, @"(?:\w+:)?([a-zA-Z0-9_-]+)\s*=", RegexOptions.None, RegexTimeout);
+            if (match.Success)
+            {
+                return IsPreservedBooleanName(match.Groups[1].Value);
+            }
+            return false;
         }
 
         public static bool IsSensitiveName(string name)
