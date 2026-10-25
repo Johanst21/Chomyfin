@@ -2,8 +2,8 @@
 
 An Emby Server plugin (4.10.x) that integrates and manages content directly from Chomikuj.pl, allowing you to browse folders, synchronize `.strm` files, and stream media.
 
-**Status:** Initial Beta Release (`v0.8.7.0-beta`). 
-This version represents a stable, functional baseline prior to applying security and performance audit patches.
+**Status:** Initial Beta Release (`v0.9.0.0-beta`). 
+This version represents a stable, functional baseline after applying security and performance audit patches.
 
 ## Features
 *   **Chomikuj Integration:** Browse your Chomikuj account folders directly.
