@@ -38,8 +38,15 @@ namespace Chomyfin.Configuration
 
         public override string EditorTitle => Chomyfin.Services.ChomyfinServices.LocalizationManager?.GetLocalizedString("Chomyfin_EditorTitle") ?? "Chomyfin_EditorTitle";
 
-        public override string EditorDescription =>
-            Chomyfin.Services.ChomyfinServices.LocalizationManager?.GetLocalizedString("Chomyfin_EditorDescription") ?? "Chomyfin_EditorDescription";
+        public override string EditorDescription
+        {
+            get
+            {
+                var baseDesc = Chomyfin.Services.ChomyfinServices.LocalizationManager?.GetLocalizedString("Chomyfin_EditorDescription") ?? "Chomyfin: Configuración del plugin";
+                var summary = Chomyfin.Services.ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? (Chomyfin.Services.ChomyfinServices.LocalizationManager?.GetLocalizedString("Chomyfin_Status_NoSyncYet") ?? "No se ha ejecutado ninguna sincronización aún.");
+                return $"{baseDesc}\n\nÚltima sincronización: {summary}";
+            }
+        }
 
         // --- Credenciales y acceso web ---
 
@@ -102,7 +109,11 @@ namespace Chomyfin.Configuration
 
         [LocalizedDisplayName("Chomyfin_LastSyncStatus_Name")]
         [LocalizedDescription("Chomyfin_LastSyncStatus_Description")]
-        public string LastSyncStatus => Chomyfin.Services.ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? (Chomyfin.Services.ChomyfinServices.LocalizationManager?.GetLocalizedString("Chomyfin_Status_NotAvailable") ?? "No disponible.");
+        public string LastSyncStatus
+        {
+            get => Chomyfin.Services.ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? (Chomyfin.Services.ChomyfinServices.LocalizationManager?.GetLocalizedString("Chomyfin_Status_NotAvailable") ?? "No disponible.");
+            set { }
+        }
 
         // --- Rendimiento y caché ---
 

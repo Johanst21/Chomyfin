@@ -87,6 +87,15 @@ namespace Chomyfin
         public override string Name => "Chomyfin";
         public override string Description => "Resuelve URLs de Chomikuj.pl para reproducción directa y sincroniza archivos .strm.";
 
+        /// <summary>
+        /// Expone el resultado y resumen de la última sincronización en la UI.
+        /// </summary>
+        public string EditorDescription()
+        {
+            var summary = ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? (LocalizationManager?.GetLocalizedString("Chomyfin_Status_NoSyncYet") ?? "No se ha ejecutado ninguna sincronización aún.");
+            return $"Chomyfin: Configuración del plugin. {summary}";
+        }
+
         // La configuración se gestiona internamente por BasePluginSimpleUI<T>
         public ChomyfinOptions Configuration => this.GetOptions();
         public ImageFormat ThumbImageFormat => ImageFormat.Jpg;
