@@ -35,105 +35,105 @@ namespace Chomyfin.Configuration
             // Mejora 3: Vía rápida de resolución
             UseFastResolvePath = true;
 
-            LastSyncStatus = Chomyfin.Services.ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? "No se ha ejecutado ninguna sincronización aún.";
+            LastSyncStatus = Chomyfin.Services.ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? "No synchronization has been run yet.";
         }
 
-        public override string EditorTitle => Chomyfin.Services.ChomyfinServices.LocalizationManager?.GetLocalizedString("Chomyfin_EditorTitle") ?? "Chomyfin_EditorTitle";
+        public override string EditorTitle => "Chomyfin Options";
 
-        public override string EditorDescription => Chomyfin.Services.ChomyfinServices.LocalizationManager?.GetLocalizedString("Chomyfin_EditorDescription") ?? "Chomyfin_EditorDescription";
+        public override string EditorDescription => "Configure Chomikuj.pl access, .strm file synchronization, and advanced settings.";
 
         // --- Credenciales y acceso web ---
 
-        [DisplayName("Chomyfin_Username_Name")]
-        [Description("Chomyfin_Username_Description")]
+        [DisplayName("Chomikuj Username")]
+        [Description("Your Chomikuj username or email address.")]
         public string Username { get; set; }
 
-        [DisplayName("Chomyfin_Password_Name")]
-        [Description("Chomyfin_Password_Description")]
+        [DisplayName("Chomikuj Password")]
+        [Description("Your Chomikuj account password (hidden in the interface).")]
         [IsPassword]
         public string Password { get; set; }
 
-        [DisplayName("Chomyfin_FolderPassword_Name")]
-        [Description("Chomyfin_FolderPassword_Description")]
+        [DisplayName("Protected Folders Password (Optional)")]
+        [Description("Password to access private protected folders such as 'Prywatne'.")]
         [IsPassword]
         public string FolderPassword { get; set; }
 
         // --- Generación y sincronización de .strm (Tarea 2) ---
 
-        [DisplayName("Chomyfin_StrmDestinationFolder_Name")]
-        [Description("Chomyfin_StrmDestinationFolder_Description")]
+        [DisplayName("STRM Destination Folder")]
+        [Description("Local directory on the server where the .strm library will be generated.")]
         [EditFolderPicker]
         public string StrmDestinationFolder { get; set; }
 
-        [DisplayName("Chomyfin_SyncMode_Name")]
-        [Description("Chomyfin_SyncMode_Description")]
+        [DisplayName("Sync Mode")]
+        [Description("Choose whether to synchronize the entire Chomikuj account or only the specified folders.")]
         public StrmSyncMode SyncMode { get; set; }
 
-        [DisplayName("Chomyfin_CustomScanPath_Name")]
-        [Description("Chomyfin_CustomScanPath_Description")]
+        [DisplayName("Selected Chomikuj Folders")]
+        [Description("Comma or semicolon separated paths (e.g. /Prywatne/Servers/Chomyfin/, /Other/Path).")]
         public string CustomScanPath { get; set; } = string.Empty;
 
-        [DisplayName("Chomyfin_AllowedVideoExtensions_Name")]
-        [Description("Chomyfin_AllowedVideoExtensions_Description")]
+        [DisplayName("Allowed Video Extensions")]
+        [Description("Comma-separated list of extensions (without dot). Only files with these extensions will generate a .strm file.")]
         public string AllowedVideoExtensions { get; set; }
 
-        [DisplayName("Chomyfin_OverwritePolicy_Name")]
-        [Description("Chomyfin_OverwritePolicy_Description")]
+        [DisplayName("STRM Overwrite Policy")]
+        [Description("Skip if the .strm file already exists (recommended) or update if the Chomikuj file URL has changed.")]
         public StrmOverwritePolicy OverwritePolicy { get; set; }
 
-        [DisplayName("Chomyfin_DeleteOrphans_Name")]
-        [Description("Chomyfin_DeleteOrphans_Description")]
+        [DisplayName("Delete Orphans")]
+        [Description("If enabled, .strm files in the destination folder that are no longer present on Chomikuj will be deleted.")]
         public bool DeleteOrphans { get; set; }
 
-        [DisplayName("Chomyfin_OrphansDryRun_Name")]
-        [Description("Chomyfin_OrphansDryRun_Description")]
+        [DisplayName("Orphans: Dry Run Only")]
+        [Description("While enabled, only logs which orphan .strm files would be deleted without removing them from disk.")]
         public bool OrphansDryRun { get; set; }
 
-        [DisplayName("Chomyfin_AutoSyncEnabled_Name")]
-        [Description("Chomyfin_AutoSyncEnabled_Description")]
+        [DisplayName("Enable Automatic Scheduled Sync")]
+        [Description("Enables recurring automatic execution of the sync task. If disabled, you can always run sync manually from Emby Scheduled Tasks.")]
         public bool AutoSyncEnabled { get; set; }
 
-        [DisplayName("Chomyfin_RefreshLibraryAfterSync_Name")]
-        [Description("Chomyfin_RefreshLibraryAfterSync_Description")]
+        [DisplayName("Refresh Emby Library After Sync")]
+        [Description("Notifies Emby about added or deleted files when synchronization finishes.")]
         public bool RefreshLibraryAfterSync { get; set; }
 
-        [DisplayName("Chomyfin_EnableSoapDiagnostics_Name")]
-        [Description("Chomyfin_EnableSoapDiagnostics_Description")]
+        [DisplayName("Enable SOAP Diagnostics")]
+        [Description("Logs raw XML from the SOAP API; for debugging purposes only.")]
         public bool EnableSoapDiagnostics { get; set; }
 
-        [DisplayName("Chomyfin_LastSyncStatus_Name")]
-        [Description("Chomyfin_LastSyncStatus_Description")]
+        [DisplayName("Last Sync Status")]
+        [Description("Shows the summary and result of the most recent synchronization task.")]
         [ReadOnly(true)]
         public string LastSyncStatus { get; set; }
 
         // --- Rendimiento y caché ---
 
-        [DisplayName("Chomyfin_MaxConcurrentResolutions_Name")]
-        [Description("Chomyfin_MaxConcurrentResolutions_Description")]
+        [DisplayName("Max Concurrent Resolutions")]
+        [Description("Maximum number of simultaneous downloads or resolutions (1-10).")]
         public int MaxConcurrentResolutions { get; set; }
 
-        [DisplayName("Chomyfin_EnableCookieCache_Name")]
-        [Description("Chomyfin_EnableCookieCache_Description")]
+        [DisplayName("Enable Cookie Cache")]
+        [Description("Maintains an active Chomikuj.pl session to avoid repeated logins.")]
         public bool EnableCookieCache { get; set; }
 
-        [DisplayName("Chomyfin_CookieCacheDurationMinutes_Name")]
-        [Description("Chomyfin_CookieCacheDurationMinutes_Description")]
+        [DisplayName("Cookie Cache Duration (Minutes)")]
+        [Description("Session expiration time in minutes.")]
         public int CookieCacheDurationMinutes { get; set; }
 
         // --- Versiones hermanas (Tarea 1) ---
 
-        [DisplayName("Chomyfin_ResolveSiblingVersions_Name")]
-        [Description("Chomyfin_ResolveSiblingVersions_Description")]
+        [DisplayName("Resolve Sibling Versions on Open")]
+        [Description("When opening a movie or episode detail, resolves and caches alternative qualities in the background for instant playback.")]
         public bool ResolveSiblingVersions { get; set; }
 
-        [DisplayName("Chomyfin_MaxSiblingsPerOpen_Name")]
-        [Description("Chomyfin_MaxSiblingsPerOpen_Description")]
+        [DisplayName("Sibling Versions Limit per Open")]
+        [Description("Maximum number of alternative .strm files queued for background resolution on open (1-20).")]
         public int MaxSiblingsPerOpen { get; set; }
 
         // --- Mejora 3: Vía rápida de resolución ---
 
-        [DisplayName("Chomyfin_UseFastResolvePath_Name")]
-        [Description("Chomyfin_UseFastResolvePath_Description")]
+        [DisplayName("Fast Resolution Path")]
+        [Description("Fast resolution path: uses a single request when the URL already contains the file id; falls back to the classic method if it fails.")]
         public bool UseFastResolvePath { get; set; }
 
         public List<string> GetSelectedFoldersList()

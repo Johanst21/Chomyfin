@@ -21,9 +21,6 @@
     <EmbeddedResource Include="ThumbImage.jpg" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Localization\*.json" />
-  </ItemGroup>
-  <ItemGroup>
     <!-- Referencia de compilación del SDK de Emby. Compilamos contra la beta
          4.10.0.24-beta2 (la única disponible en NuGet para 4.10) para que la
          API de plugins coincida EXACTAMENTE con el runtime 4.10.1.0: en 4.10

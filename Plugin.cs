@@ -1,12 +1,12 @@
 using System;
 using System.IO;
+using System.Linq;
 using Chomyfin.Configuration;
 using Chomyfin.Services;
 using MediaBrowser.Common;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Drawing;
-using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Plugins;
@@ -26,10 +26,9 @@ namespace Chomyfin
     /// - Tarea 2: Sincronización de .strm (SyncStatusStore, StrmSyncTask).
     /// - Actualización dinámica del estado de sincronización al abrir la interfaz de configuración.
     /// </summary>
-    public class Plugin : BasePluginSimpleUI<ChomyfinOptions>, IHasThumbImage, IHasTranslations
+    public class Plugin : BasePluginSimpleUI<ChomyfinOptions>, IHasThumbImage
     {
         public static Plugin Instance { get; private set; }
-        public ILocalizationManager LocalizationManager { get; private set; }
         private readonly ILogger _logger;
 
         public Plugin(IApplicationHost applicationHost, ILogManager logManager) : base(applicationHost)
@@ -38,15 +37,6 @@ namespace Chomyfin
             _logger = logManager.GetLogger(this.Name);
             try
             {
-                try
-                {
-                    LocalizationManager = applicationHost.Resolve<ILocalizationManager>();
-                }
-                catch
-                {
-                    // Fallback si no está disponible directamente desde el host
-                }
-
                 IFileSystem fileSystem = null;
                 try
                 {
@@ -74,7 +64,7 @@ namespace Chomyfin
                 }
                 catch { }
 
-                ChomyfinServices.Initialize(_logger, () => GetOptions(), fileSystem, libraryManager, dataFolderPath, LocalizationManager);
+                ChomyfinServices.Initialize(_logger, () => GetOptions(), fileSystem, libraryManager, dataFolderPath);
                 _logger.Info("Chomyfin ({0}) is getting loaded", this.Name);
             }
             catch (Exception ex)
@@ -87,15 +77,6 @@ namespace Chomyfin
         public override string Name => "Chomyfin";
         public override string Description => "Resuelve URLs de Chomikuj.pl para reproducción directa y sincroniza archivos .strm.";
 
-        /// <summary>
-        /// Expone el resultado y resumen de la última sincronización en la UI.
-        /// </summary>
-        public string EditorDescription()
-        {
-            var summary = ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? (LocalizationManager?.GetLocalizedString("Chomyfin_Status_NoSyncYet") ?? "No se ha ejecutado ninguna sincronización aún.");
-            return $"Chomyfin: Configuración del plugin. {summary}";
-        }
-
         // La configuración se gestiona internamente por BasePluginSimpleUI<T>
         public ChomyfinOptions Configuration => this.GetOptions();
         public ImageFormat ThumbImageFormat => ImageFormat.Jpg;
@@ -106,29 +87,11 @@ namespace Chomyfin
             return type.Assembly.GetManifestResourceStream(type.Namespace + ".ThumbImage.jpg");
         }
 
-        public TranslationInfo[] GetTranslations()
-        {
-            var type = this.GetType();
-            return new[]
-            {
-                new TranslationInfo
-                {
-                    Locale = "en-US",
-                    EmbeddedResourcePath = type.Namespace + ".Localization.en-US.json"
-                },
-                new TranslationInfo
-                {
-                    Locale = "es-ES",
-                    EmbeddedResourcePath = type.Namespace + ".Localization.es-ES.json"
-                }
-            };
-        }
-
         protected override ChomyfinOptions OnBeforeShowUI(ChomyfinOptions options)
         {
             if (options != null)
             {
-                options.LastSyncStatus = ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? (LocalizationManager?.GetLocalizedString("Chomyfin_Status_NoSyncYet") ?? "No se ha ejecutado ninguna sincronización aún.");
+                options.LastSyncStatus = ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? "No synchronization has been run yet.";
             }
             return base.OnBeforeShowUI(options);
         }
