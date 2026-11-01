@@ -126,6 +126,10 @@ namespace Chomyfin
 
         protected override ChomyfinOptions OnBeforeShowUI(ChomyfinOptions options)
         {
+            if (options != null)
+            {
+                options.LastSyncStatus = ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? (LocalizationManager?.GetLocalizedString("Chomyfin_Status_NoSyncYet") ?? "No se ha ejecutado ninguna sincronización aún.");
+            }
             return base.OnBeforeShowUI(options);
         }
 
