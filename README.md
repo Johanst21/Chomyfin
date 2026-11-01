@@ -2,8 +2,8 @@
 
 Plugin para **Emby Server** (4.10.x) que integra y gestiona contenido directamente desde **Chomikuj.pl**, permitiendo explorar carpetas, sincronizar archivos `.strm` y reproducir medios en streaming.
 
-> **Estado**: **Versión `v0.9.2.0`**.  
-> Esta versión representa una base funcional y estable antes de la aplicación de los parches de auditoría de seguridad y optimización de rendimiento.
+> **Estado**: **Versión `v0.9.3.0`**.  
+> Esta versión incorpora una auditoría completa de seguridad (P0/P1), UI en inglés sin problemas de caché y visualización del estado de sincronización.
 
 ---
 
