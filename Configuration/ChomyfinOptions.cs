@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using Chomyfin.Models;
 using Emby.Web.GenericEdit;
 using MediaBrowser.Model.Attributes;
+using MediaBrowser.Model.LocalizationAttributes;
 using MediaBrowser.Model.Logging;
 
 namespace Chomyfin.Configuration
@@ -43,95 +43,95 @@ namespace Chomyfin.Configuration
 
         // --- Credenciales y acceso web ---
 
-        [DisplayName("Chomyfin_Username_Name")]
-        [Description("Chomyfin_Username_Description")]
+        [LocalizedDisplayName("Chomyfin_Username_Name")]
+        [LocalizedDescription("Chomyfin_Username_Description")]
         public string Username { get; set; }
 
-        [DisplayName("Chomyfin_Password_Name")]
-        [Description("Chomyfin_Password_Description")]
+        [LocalizedDisplayName("Chomyfin_Password_Name")]
+        [LocalizedDescription("Chomyfin_Password_Description")]
         [IsPassword]
         public string Password { get; set; }
 
-        [DisplayName("Chomyfin_FolderPassword_Name")]
-        [Description("Chomyfin_FolderPassword_Description")]
+        [LocalizedDisplayName("Chomyfin_FolderPassword_Name")]
+        [LocalizedDescription("Chomyfin_FolderPassword_Description")]
         [IsPassword]
         public string FolderPassword { get; set; }
 
         // --- Generación y sincronización de .strm (Tarea 2) ---
 
-        [DisplayName("Chomyfin_StrmDestinationFolder_Name")]
-        [Description("Chomyfin_StrmDestinationFolder_Description")]
+        [LocalizedDisplayName("Chomyfin_StrmDestinationFolder_Name")]
+        [LocalizedDescription("Chomyfin_StrmDestinationFolder_Description")]
         [EditFolderPicker]
         public string StrmDestinationFolder { get; set; }
 
-        [DisplayName("Chomyfin_SyncMode_Name")]
-        [Description("Chomyfin_SyncMode_Description")]
+        [LocalizedDisplayName("Chomyfin_SyncMode_Name")]
+        [LocalizedDescription("Chomyfin_SyncMode_Description")]
         public StrmSyncMode SyncMode { get; set; }
 
-        [DisplayName("Chomyfin_CustomScanPath_Name")]
-        [Description("Chomyfin_CustomScanPath_Description")]
+        [LocalizedDisplayName("Chomyfin_CustomScanPath_Name")]
+        [LocalizedDescription("Chomyfin_CustomScanPath_Description")]
         public string CustomScanPath { get; set; } = string.Empty;
 
-        [DisplayName("Chomyfin_AllowedVideoExtensions_Name")]
-        [Description("Chomyfin_AllowedVideoExtensions_Description")]
+        [LocalizedDisplayName("Chomyfin_AllowedVideoExtensions_Name")]
+        [LocalizedDescription("Chomyfin_AllowedVideoExtensions_Description")]
         public string AllowedVideoExtensions { get; set; }
 
-        [DisplayName("Chomyfin_OverwritePolicy_Name")]
-        [Description("Chomyfin_OverwritePolicy_Description")]
+        [LocalizedDisplayName("Chomyfin_OverwritePolicy_Name")]
+        [LocalizedDescription("Chomyfin_OverwritePolicy_Description")]
         public StrmOverwritePolicy OverwritePolicy { get; set; }
 
-        [DisplayName("Chomyfin_DeleteOrphans_Name")]
-        [Description("Chomyfin_DeleteOrphans_Description")]
+        [LocalizedDisplayName("Chomyfin_DeleteOrphans_Name")]
+        [LocalizedDescription("Chomyfin_DeleteOrphans_Description")]
         public bool DeleteOrphans { get; set; }
 
-        [DisplayName("Chomyfin_OrphansDryRun_Name")]
-        [Description("Chomyfin_OrphansDryRun_Description")]
+        [LocalizedDisplayName("Chomyfin_OrphansDryRun_Name")]
+        [LocalizedDescription("Chomyfin_OrphansDryRun_Description")]
         public bool OrphansDryRun { get; set; }
 
-        [DisplayName("Chomyfin_AutoSyncEnabled_Name")]
-        [Description("Chomyfin_AutoSyncEnabled_Description")]
+        [LocalizedDisplayName("Chomyfin_AutoSyncEnabled_Name")]
+        [LocalizedDescription("Chomyfin_AutoSyncEnabled_Description")]
         public bool AutoSyncEnabled { get; set; }
 
-        [DisplayName("Chomyfin_RefreshLibraryAfterSync_Name")]
-        [Description("Chomyfin_RefreshLibraryAfterSync_Description")]
+        [LocalizedDisplayName("Chomyfin_RefreshLibraryAfterSync_Name")]
+        [LocalizedDescription("Chomyfin_RefreshLibraryAfterSync_Description")]
         public bool RefreshLibraryAfterSync { get; set; }
 
-        [DisplayName("Chomyfin_EnableSoapDiagnostics_Name")]
-        [Description("Chomyfin_EnableSoapDiagnostics_Description")]
+        [LocalizedDisplayName("Chomyfin_EnableSoapDiagnostics_Name")]
+        [LocalizedDescription("Chomyfin_EnableSoapDiagnostics_Description")]
         public bool EnableSoapDiagnostics { get; set; }
 
-        [DisplayName("Chomyfin_LastSyncStatus_Name")]
-        [Description("Chomyfin_LastSyncStatus_Description")]
+        [LocalizedDisplayName("Chomyfin_LastSyncStatus_Name")]
+        [LocalizedDescription("Chomyfin_LastSyncStatus_Description")]
         public string LastSyncStatus => Chomyfin.Services.ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? (Chomyfin.Services.ChomyfinServices.LocalizationManager?.GetLocalizedString("Chomyfin_Status_NotAvailable") ?? "No disponible.");
 
         // --- Rendimiento y caché ---
 
-        [DisplayName("Chomyfin_MaxConcurrentResolutions_Name")]
-        [Description("Chomyfin_MaxConcurrentResolutions_Description")]
+        [LocalizedDisplayName("Chomyfin_MaxConcurrentResolutions_Name")]
+        [LocalizedDescription("Chomyfin_MaxConcurrentResolutions_Description")]
         public int MaxConcurrentResolutions { get; set; }
 
-        [DisplayName("Chomyfin_EnableCookieCache_Name")]
-        [Description("Chomyfin_EnableCookieCache_Description")]
+        [LocalizedDisplayName("Chomyfin_EnableCookieCache_Name")]
+        [LocalizedDescription("Chomyfin_EnableCookieCache_Description")]
         public bool EnableCookieCache { get; set; }
 
-        [DisplayName("Chomyfin_CookieCacheDurationMinutes_Name")]
-        [Description("Chomyfin_CookieCacheDurationMinutes_Description")]
+        [LocalizedDisplayName("Chomyfin_CookieCacheDurationMinutes_Name")]
+        [LocalizedDescription("Chomyfin_CookieCacheDurationMinutes_Description")]
         public int CookieCacheDurationMinutes { get; set; }
 
         // --- Versiones hermanas (Tarea 1) ---
 
-        [DisplayName("Chomyfin_ResolveSiblingVersions_Name")]
-        [Description("Chomyfin_ResolveSiblingVersions_Description")]
+        [LocalizedDisplayName("Chomyfin_ResolveSiblingVersions_Name")]
+        [LocalizedDescription("Chomyfin_ResolveSiblingVersions_Description")]
         public bool ResolveSiblingVersions { get; set; }
 
-        [DisplayName("Chomyfin_MaxSiblingsPerOpen_Name")]
-        [Description("Chomyfin_MaxSiblingsPerOpen_Description")]
+        [LocalizedDisplayName("Chomyfin_MaxSiblingsPerOpen_Name")]
+        [LocalizedDescription("Chomyfin_MaxSiblingsPerOpen_Description")]
         public int MaxSiblingsPerOpen { get; set; }
 
         // --- Mejora 3: Vía rápida de resolución ---
 
-        [DisplayName("Chomyfin_UseFastResolvePath_Name")]
-        [Description("Chomyfin_UseFastResolvePath_Description")]
+        [LocalizedDisplayName("Chomyfin_UseFastResolvePath_Name")]
+        [LocalizedDescription("Chomyfin_UseFastResolvePath_Description")]
         public bool UseFastResolvePath { get; set; }
 
         public List<string> GetSelectedFoldersList()
