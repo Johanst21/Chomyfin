@@ -8,6 +8,7 @@
     <Version>0.9.3.0</Version>
     <InformationalVersion>0.9.3.0</InformationalVersion>
     <PackageTags>plugin</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <LangVersion>9.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>

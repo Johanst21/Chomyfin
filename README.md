@@ -1,5 +1,7 @@
 # Chomyfin
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 An Emby Server plugin (4.10.x) that integrates and manages content directly from Chomikuj.pl, allowing you to browse folders, synchronize `.strm` files, and stream media.
 
 **Status:** Version `v0.9.3.0`.  
@@ -39,4 +41,4 @@ bin/Release/netstandard2.0/Chomyfin.dll
 *   **Chomyfin v0.9.3.0**: https://github.com/Johanst21/Chomyfin/releases/tag/v0.9.3.0
 
 ## License
-Distributed under the project's software use license.
+This project is licensed under the terms of the GNU General Public License v3.0 (GPL-3.0). See the [LICENSE](LICENSE) file for the full license text.
