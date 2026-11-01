@@ -132,11 +132,6 @@ namespace Chomyfin.Configuration
         [Description("Fast resolution path: uses a single request when the URL already contains the file id; falls back to the classic method if it fails.")]
         public bool UseFastResolvePath { get; set; }
 
-        [DisplayName("Last Sync Status")]
-        [Description("Shows the summary and result of the most recent synchronization task.")]
-        [ReadOnly(true)]
-        public string LastSyncStatus { get; set; }
-
         public List<string> GetSelectedFoldersList()
         {
             if (string.IsNullOrWhiteSpace(CustomScanPath)) return new List<string>();
@@ -196,5 +191,9 @@ namespace Chomyfin.Configuration
         /// Método de compatibilidad invocado antes de persistir.
         /// </summary>
         public bool IsValid(out string error) => SanitizeAndValidate(out error);
+
+        [DisplayName("Last Sync Status")]
+        [Description("Shows the summary and result of the most recent synchronization task.")]
+        public string LastSyncStatus { get; set; }
     }
 }
