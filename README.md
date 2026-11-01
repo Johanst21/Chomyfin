@@ -1,55 +1,42 @@
 # Chomyfin
 
-Plugin para **Emby Server** (4.10.x) que integra y gestiona contenido directamente desde **Chomikuj.pl**, permitiendo explorar carpetas, sincronizar archivos `.strm` y reproducir medios en streaming.
+An Emby Server plugin (4.10.x) that integrates and manages content directly from Chomikuj.pl, allowing you to browse folders, synchronize `.strm` files, and stream media.
 
-> **Estado**: **Versión `v0.9.3.0`**.  
-> Esta versión incorpora una auditoría completa de seguridad (P0/P1), UI en inglés sin problemas de caché y visualización del estado de sincronización.
+**Status:** Version `v0.9.3.0`.  
+This version incorporates a full security audit (P0/P1), clean hardcoded English UI to prevent caching issues, and live sync status reporting.
 
----
+## Features
+*   **Chomikuj Integration:** Browse your Chomikuj account folders directly.
+*   **`.strm` Synchronization:** Scheduled task to generate and update `.strm` files pointing to your local Emby library with atomic writes.
+*   **Direct Playback:** Custom `IMediaSourceProvider` adapted for Emby Server 4.10.x.
+*   **Self-contained:** Compiled for `netstandard2.0` into a single DLL with no unnecessary external dependencies.
+*   **Security & Stability:** Path traversal sanitization, orphan dry-run protection, admin-only endpoints, and background sibling resolution.
 
-## Características
+## Requirements
+*   **Emby Server:** 4.10.x or higher.
+*   **.NET SDK:** 8.0 or higher (for compilation).
+*   **Target Framework:** `netstandard2.0` (standard required by the Emby plugin portal).
 
-- **Exploración de Chomikuj**: Navegación por cuentas y carpetas de Chomikuj integradas en Emby.
-- **Sincronización `.strm`**: Tarea programada para generar y actualizar ficheros `.strm` hacia la biblioteca local de Emby.
-- **Reproducción directa**: `IMediaSourceProvider` adaptado a la API y firma de Emby Server 4.10.x.
-- **Autocontenido**: Compilado para `netstandard2.0` en una única DLL sin dependencias externas innecesarias.
-
----
-
-## Requisitos
-
-- **Emby Server**: 4.10.x o superior.
-- **.NET SDK**: 8.0 o superior (para compilación).
-- **Target Framework**: `netstandard2.0` (estándar requerido por el portal de plugins de Emby).
-
----
-
-## Compilación
-
-Para compilar el plugin en modo Release:
-
+## Compilation
+To build the plugin in Release mode:
 ```bash
 dotnet build Chomyfin.csproj -c Release
 ```
-
-La biblioteca generada se ubicará en:
+The generated library will be located at:
 ```
 bin/Release/netstandard2.0/Chomyfin.dll
 ```
 
----
+## Installation
+1. Stop the Emby server.
+2. Copy the generated `Chomyfin.dll` into the Emby plugins directory:
+   *   **Linux**: `/var/lib/emby/plugins/` (or your Emby profile path).
+   *   **Windows**: `%AppData%\Emby-Server\programdata\plugins\`
+3. Start Emby Server.
+4. Go to **Emby Admin Dashboard > Plugins** to verify and configure Chomyfin credentials and settings.
 
-## Instalación
+## Releases
+*   **Chomyfin v0.9.3.0**: https://github.com/Johanst21/Chomyfin/releases/tag/v0.9.3.0
 
-1. Detén el servidor de Emby.
-2. Copia el archivo generado `Chomyfin.dll` dentro del directorio de plugins de Emby:
-   - **Linux**: `/var/lib/emby/plugins/` (o la ruta donde esté instalado el perfil de Emby).
-   - **Windows**: `%AppData%\Emby-Server\programdata\plugins\`
-3. Inicia Emby Server.
-4. Accede al panel de administración de Emby en **Configuración > Plugins** para verificar y configurar las credenciales y opciones de Chomyfin.
-
----
-
-## Licencia
-
-Distribuido bajo licencia de uso de software del proyecto.
+## License
+Distributed under the project's software use license.
