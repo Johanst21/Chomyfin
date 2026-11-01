@@ -1,0 +1,75 @@
+{
+  "Chomyfin_EditorTitle": "Chomyfin Options",
+  "Chomyfin_EditorDescription": "Configure Chomikuj.pl access, .strm file synchronization, and advanced settings.",
+
+  "Chomyfin_Username_Name": "Chomikuj username",
+  "Chomyfin_Username_Description": "Username for your Chomikuj.pl account",
+
+  "Chomyfin_Password_Name": "Chomikuj password",
+  "Chomyfin_Password_Description": "Password for your Chomikuj.pl account (hidden in the interface).",
+
+  "Chomyfin_FolderPassword_Name": "Password for protected folders (optional)",
+  "Chomyfin_FolderPassword_Description": "Password to access private protected folders such as 'Prywatne'",
+
+  "Chomyfin_StrmDestinationFolder_Name": "Local destination folder for .strm files",
+  "Chomyfin_StrmDestinationFolder_Description": "Local directory on the server where the .strm library will be generated.",
+
+  "Chomyfin_SyncMode_Name": "Sync mode",
+  "Chomyfin_SyncMode_Description": "Choose whether to synchronize the entire Chomikuj account or only the specified folders.",
+
+  "Chomyfin_CustomScanPath_Name": "Selected Chomikuj folders",
+  "Chomyfin_CustomScanPath_Description": "Comma or semicolon separated paths (e.g. /Prywatne/Servers/Chomyfin/, /Other/Path)",
+
+  "Chomyfin_AllowedVideoExtensions_Name": "Allowed video extensions",
+  "Chomyfin_AllowedVideoExtensions_Description": "Comma-separated list of extensions (without dot). Only files with these extensions will generate a .strm file.",
+
+  "Chomyfin_OverwritePolicy_Name": "Overwrite policy for .strm",
+  "Chomyfin_OverwritePolicy_Description": "Skip if the .strm file already exists (recommended) or update if the Chomikuj file URL has changed.",
+
+  "Chomyfin_DeleteOrphans_Name": "Delete orphan files",
+  "Chomyfin_DeleteOrphans_Description": "⚠️ WARNING: If enabled, local .strm files that no longer exist in your Chomikuj account will be deleted.",
+
+  "Chomyfin_OrphansDryRun_Name": "Orphans: simulate only (dry-run)",
+  "Chomyfin_OrphansDryRun_Description": "While enabled, only logs which orphan .strm files would be deleted without removing them from disk.",
+
+  "Chomyfin_AutoSyncEnabled_Name": "Enable automatic scheduled sync",
+  "Chomyfin_AutoSyncEnabled_Description": "Enables recurring automatic execution of the sync task. If disabled, you can always run sync manually from Emby Scheduled Tasks.",
+
+  "Chomyfin_RefreshLibraryAfterSync_Name": "Update Emby library after sync",
+  "Chomyfin_RefreshLibraryAfterSync_Description": "Notifies Emby about added or deleted files when synchronization finishes.",
+
+  "Chomyfin_EnableSoapDiagnostics_Name": "Enable SOAP diagnostics",
+  "Chomyfin_EnableSoapDiagnostics_Description": "Logs raw XML from the SOAP API; for debugging purposes only",
+
+  "Chomyfin_LastSyncStatus_Name": "Last sync status",
+  "Chomyfin_LastSyncStatus_Description": "Information about the last executed synchronization.",
+
+  "Chomyfin_MaxConcurrentResolutions_Name": "Concurrent resolutions",
+  "Chomyfin_MaxConcurrentResolutions_Description": "Maximum number of simultaneous downloads (1-10)",
+
+  "Chomyfin_EnableCookieCache_Name": "Enable cookie cache",
+  "Chomyfin_EnableCookieCache_Description": "Maintains an active Chomikuj.pl session",
+
+  "Chomyfin_CookieCacheDurationMinutes_Name": "Cookie cache duration (minutes)",
+  "Chomyfin_CookieCacheDurationMinutes_Description": "Session expiration time in minutes",
+
+  "Chomyfin_ResolveSiblingVersions_Name": "Resolve sibling versions on open",
+  "Chomyfin_ResolveSiblingVersions_Description": "When opening a movie or episode detail, resolves and caches alternative qualities in the background for instant playback.",
+
+  "Chomyfin_MaxSiblingsPerOpen_Name": "Sibling versions limit per open",
+  "Chomyfin_MaxSiblingsPerOpen_Description": "Maximum number of alternative .strm files queued for background resolution on open (1-20).",
+
+  "Chomyfin_UseFastResolvePath_Name": "Fast resolution path",
+  "Chomyfin_UseFastResolvePath_Description": "Fast resolution path: uses a single request when the URL already contains the file id; falls back to the classic method if it fails.",
+
+  "Chomyfin_Status_NotAvailable": "Not available.",
+  "Chomyfin_Status_SyncInProgress": "Synchronization in progress...",
+  "Chomyfin_Status_NoSyncYet": "No synchronization has been run yet.",
+  "Chomyfin_Status_Completed": "Completed",
+  "Chomyfin_Status_WithErrors": "With errors",
+  "Chomyfin_Status_Created": "Created",
+  "Chomyfin_Status_Updated": "Updated",
+  "Chomyfin_Status_Skipped": "Skipped",
+  "Chomyfin_Status_Errors": "Errors",
+  "Chomyfin_Status_Orphans": "Orphans"
+}

@@ -26,16 +26,19 @@ namespace Chomyfin.Services
         public static SiblingFinder SiblingFinder { get; internal set; }
         public static SiblingResolutionQueue SiblingResolutionQueue { get; private set; }
         public static string PluginDataPath { get; private set; }
+        public static MediaBrowser.Model.Globalization.ILocalizationManager LocalizationManager { get; set; }
 
         public static void Initialize(
             ILogger logger,
             Func<ChomyfinOptions> optionsAccessor,
             IFileSystem fileSystem,
             MediaBrowser.Controller.Library.ILibraryManager libraryManager = null,
-            string pluginDataPath = null)
+            string pluginDataPath = null,
+            MediaBrowser.Model.Globalization.ILocalizationManager localizationManager = null)
         {
             Logger = logger;
             OptionsAccessor = optionsAccessor;
+            LocalizationManager = localizationManager;
             ChomikujService = new ChomikujService(logger, optionsAccessor);
             if (fileSystem != null)
             {
@@ -85,6 +88,7 @@ namespace Chomyfin.Services
             SiblingResolutionQueue = null;
             SiblingResolutionQueue.ResetForTests();
             PluginDataPath = null;
+            LocalizationManager = null;
             SyncStatusStore.ResetForTests();
         }
     }

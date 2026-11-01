@@ -6,8 +6,10 @@ using MediaBrowser.Common;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Drawing;
+using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
+using MediaBrowser.Model.Plugins;
 
 namespace Chomyfin
 {
@@ -24,9 +26,10 @@ namespace Chomyfin
     /// - Tarea 2: Sincronización de .strm (SyncStatusStore, StrmSyncTask).
     /// - Actualización dinámica del estado de sincronización al abrir la interfaz de configuración.
     /// </summary>
-    public class Plugin : BasePluginSimpleUI<ChomyfinOptions>, IHasThumbImage
+    public class Plugin : BasePluginSimpleUI<ChomyfinOptions>, IHasThumbImage, IHasTranslations
     {
         public static Plugin Instance { get; private set; }
+        public ILocalizationManager LocalizationManager { get; private set; }
         private readonly ILogger _logger;
 
         public Plugin(IApplicationHost applicationHost, ILogManager logManager) : base(applicationHost)
@@ -35,6 +38,15 @@ namespace Chomyfin
             _logger = logManager.GetLogger(this.Name);
             try
             {
+                try
+                {
+                    LocalizationManager = applicationHost.Resolve<ILocalizationManager>();
+                }
+                catch
+                {
+                    // Fallback si no está disponible directamente desde el host
+                }
+
                 IFileSystem fileSystem = null;
                 try
                 {
@@ -62,7 +74,7 @@ namespace Chomyfin
                 }
                 catch { }
 
-                ChomyfinServices.Initialize(_logger, () => GetOptions(), fileSystem, libraryManager, dataFolderPath);
+                ChomyfinServices.Initialize(_logger, () => GetOptions(), fileSystem, libraryManager, dataFolderPath, LocalizationManager);
                 _logger.Info("Chomyfin ({0}) is getting loaded", this.Name);
             }
             catch (Exception ex)
@@ -83,6 +95,24 @@ namespace Chomyfin
         {
             var type = this.GetType();
             return type.Assembly.GetManifestResourceStream(type.Namespace + ".ThumbImage.jpg");
+        }
+
+        public TranslationInfo[] GetTranslations()
+        {
+            var type = this.GetType();
+            return new[]
+            {
+                new TranslationInfo
+                {
+                    Locale = "en-US",
+                    EmbeddedResourcePath = type.Namespace + ".Localization.en-US.json"
+                },
+                new TranslationInfo
+                {
+                    Locale = "es-ES",
+                    EmbeddedResourcePath = type.Namespace + ".Localization.es-ES.json"
+                }
+            };
         }
 
         protected override ChomyfinOptions OnBeforeShowUI(ChomyfinOptions options)
