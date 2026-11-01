@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using Chomyfin.Models;
+using Chomyfin.Services;
 using Emby.Web.GenericEdit;
 using MediaBrowser.Model.Attributes;
 using MediaBrowser.Model.Logging;
@@ -35,7 +36,7 @@ namespace Chomyfin.Configuration
             // Mejora 3: Vía rápida de resolución
             UseFastResolvePath = true;
 
-            LastSyncStatus = Chomyfin.Services.ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? "No synchronization has been run yet.";
+            LastSyncStatus = ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? "No synchronization has been run yet.";
         }
 
         public override string EditorTitle => "Chomyfin Options";
@@ -101,11 +102,6 @@ namespace Chomyfin.Configuration
         [Description("Logs raw XML from the SOAP API; for debugging purposes only.")]
         public bool EnableSoapDiagnostics { get; set; }
 
-        [DisplayName("Last Sync Status")]
-        [Description("Shows the summary and result of the most recent synchronization task.")]
-        [ReadOnly(true)]
-        public string LastSyncStatus { get; set; }
-
         // --- Rendimiento y caché ---
 
         [DisplayName("Max Concurrent Resolutions")]
@@ -135,6 +131,11 @@ namespace Chomyfin.Configuration
         [DisplayName("Fast Resolution Path")]
         [Description("Fast resolution path: uses a single request when the URL already contains the file id; falls back to the classic method if it fails.")]
         public bool UseFastResolvePath { get; set; }
+
+        [DisplayName("Last Sync Status")]
+        [Description("Shows the summary and result of the most recent synchronization task.")]
+        [ReadOnly(true)]
+        public string LastSyncStatus { get; set; }
 
         public List<string> GetSelectedFoldersList()
         {
