@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Chomyfin.Models;
 
 namespace Chomyfin.Services
@@ -82,19 +83,19 @@ namespace Chomyfin.Services
                 if (IsRunning)
                 {
                     var duration = LastStartTimeUtc.HasValue ? (DateTime.UtcNow - LastStartTimeUtc.Value).TotalSeconds : 0;
-                    return $"Sincronización en curso (hace {(int)duration}s)...";
+                    return $"Sync in progress (running for {(int)duration}s)...";
                 }
 
                 if (!LastStartTimeUtc.HasValue)
                 {
-                    return "No se ha ejecutado ninguna sincronización aún.";
+                    return "No synchronization has been run yet.";
                 }
 
-                var statusText = LastSuccess == true ? "Completada" : "Con errores";
-                var localTime = (LastEndTimeUtc ?? LastStartTimeUtc.Value).ToLocalTime().ToString("g");
+                var statusText = LastSuccess == true ? "Completed" : "Failed";
+                var localTime = (LastEndTimeUtc ?? LastStartTimeUtc.Value).ToLocalTime().ToString("g", CultureInfo.InvariantCulture);
 
-                return $"{statusText} ({localTime}) - Creados: {FilesCreated}, Actualizados: {FilesUpdated}, Omitidos: {FilesSkipped}, Errores: {FilesFailed}" +
-                       (OrphansDeleted > 0 ? $", Huérfanos: {OrphansDeleted}" : "");
+                return $"{statusText} ({localTime}) - Created: {FilesCreated}, Updated: {FilesUpdated}, Skipped: {FilesSkipped}, Errors: {FilesFailed}" +
+                       (OrphansDeleted > 0 ? $", Orphans: {OrphansDeleted}" : "");
             }
         }
     }
