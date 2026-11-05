@@ -26,7 +26,8 @@ namespace Chomyfin.Services
         private readonly bool _enableSoapDiagnostics;
         private readonly string _diagnosticsDir;
 
-        private static int _dumpCounter = 0;
+        // No estático: cada instancia (ejecución) tiene su propio contador de dumps.
+        private int _dumpCounter;
         private const int MaxDumpsPerExecution = 20;
 
         private int _foldersCount = 0;

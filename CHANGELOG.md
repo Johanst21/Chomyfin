@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.0.0] - 2026-11-05
+
+### Production Ready Release
+- **Technical Debt (P2)**:
+  - `SiblingFinder`: replaced `int.Parse` with `int.TryParse` so corrupt remote IDs (SxxExx patterns) are handled gracefully instead of throwing.
+  - `StrmGenerator`: introduced dedicated `StrmGeneratorAbortException` to replace message-based exception filtering (`"[StrmGenerator] Abortando..."`).
+  - `ChomikBoxClient`: `_dumpCounter` is now per-instance (non-static) so the diagnostics dump counter no longer sticks globally across executions.
+  - `StrmGenerator.CleanOrphans`: orphan cleanup errors now go through the Emby logger instead of `Console.WriteLine`.
+- **SMB/NFS Network Filesystem Support**:
+  - `AtomicFile`: temporary files now use a `.tmp` suffix (`filename.ext.{guid}.tmp`).
+  - `AtomicFile`: `File.Replace` failures (`IOException` / `PlatformNotSupportedException` on SMB/NFS shares) are handled with a safe `File.Delete` + `File.Move` fallback.
+
 ## [v0.9.3.0] - 2026-11-01
 
 ### Security Audit (P0/P1)

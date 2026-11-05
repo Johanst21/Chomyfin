@@ -134,8 +134,10 @@ namespace Chomyfin.Services
         }
 
         /// <summary>
-        /// Escribe el contenido en un archivo de forma atómica usando un archivo temporal .tmp.{guid}.
+        /// Escribe el contenido en un archivo de forma atómica usando un archivo temporal {nombre}.{guid}.tmp.
         /// Si el archivo de destino existe, utiliza File.Replace. Si no existe, utiliza File.Move.
+        /// En sistemas de archivos de red (SMB/NFS) donde File.Replace no está soportado,
+        /// se aplica un fallback seguro: File.Delete + File.Move.
         /// </summary>
         public static void WriteAllText(string path, string content, Encoding encoding = null)
         {
@@ -152,7 +154,9 @@ namespace Chomyfin.Services
                 Directory.CreateDirectory(dir);
             }
 
-            var tmpPath = Path.Combine(dir ?? string.Empty, Path.GetFileName(fullPath) + ".tmp." + Guid.NewGuid().ToString("N"));
+            // Sufijo .tmp: evita que los monitores de la librería de Emby traten el
+            // archivo temporal como contenido multimedia mientras se está escribiendo.
+            var tmpPath = Path.Combine(dir ?? string.Empty, Path.GetFileName(fullPath) + "." + Guid.NewGuid().ToString("N") + ".tmp");
 
             try
             {
@@ -160,7 +164,19 @@ namespace Chomyfin.Services
 
                 if (File.Exists(fullPath))
                 {
-                    File.Replace(tmpPath, fullPath, null);
+                    try
+                    {
+                        File.Replace(tmpPath, fullPath, null);
+                    }
+                    catch (Exception ex) when (ex is IOException || ex is PlatformNotSupportedException)
+                    {
+                        // Fallback para sistemas de archivos de red (SMB/NFS): File.Replace
+                        // no está soportado. Se sustituye el original por el temporal.
+                        // Si el File.Move falla, el bloque catch exterior limpia el tmp y re-lanza,
+                        // de modo que el archivo original no queda corrompido ni perdido.
+                        File.Delete(fullPath);
+                        File.Move(tmpPath, fullPath);
+                    }
                 }
                 else
                 {

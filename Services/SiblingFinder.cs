@@ -179,9 +179,25 @@ namespace Chomyfin.Services
             var sxxMatch = SxxExxRegex.Match(currentFileName);
             if (!sxxMatch.Success) return;
 
-            var season = int.Parse(sxxMatch.Groups["season"].Value);
-            var ep1 = int.Parse(sxxMatch.Groups["ep1"].Value);
-            var ep2 = sxxMatch.Groups["ep2"].Success ? int.Parse(sxxMatch.Groups["ep2"].Value) : (int?)null;
+            int season, ep1;
+            if (!int.TryParse(sxxMatch.Groups["season"].Value, out season) ||
+                !int.TryParse(sxxMatch.Groups["ep1"].Value, out ep1))
+            {
+                _logger.Warn("Chomyfin: patrón SxxExx corrupto en '{0}'; omitiendo búsqueda por regex", currentPath);
+                return;
+            }
+
+            int? ep2 = null;
+            if (sxxMatch.Groups["ep2"].Success)
+            {
+                int ep2Parsed;
+                if (!int.TryParse(sxxMatch.Groups["ep2"].Value, out ep2Parsed))
+                {
+                    _logger.Warn("Chomyfin: patrón SxxExx corrupto (ep2) en '{0}'; omitiendo búsqueda por regex", currentPath);
+                    return;
+                }
+                ep2 = ep2Parsed;
+            }
 
             var dir = Path.GetDirectoryName(currentPath);
             if (string.IsNullOrEmpty(dir) || !_fileSystem.DirectoryExists(dir)) return;
@@ -228,9 +244,23 @@ namespace Chomyfin.Services
                     var match = SxxExxRegex.Match(candidateName);
                     if (match.Success)
                     {
-                        var s = int.Parse(match.Groups["season"].Value);
-                        var e1 = int.Parse(match.Groups["ep1"].Value);
-                        var e2 = match.Groups["ep2"].Success ? int.Parse(match.Groups["ep2"].Value) : (int?)null;
+                        int s, e1;
+                        if (!int.TryParse(match.Groups["season"].Value, out s) ||
+                            !int.TryParse(match.Groups["ep1"].Value, out e1))
+                        {
+                            continue; // Candidado corrupto: se omite
+                        }
+
+                        int? e2 = null;
+                        if (match.Groups["ep2"].Success)
+                        {
+                            int e2Parsed;
+                            if (!int.TryParse(match.Groups["ep2"].Value, out e2Parsed))
+                            {
+                                continue; // Candidado corrupto: se omite
+                            }
+                            e2 = e2Parsed;
+                        }
 
                         if (s == targetSeason && e1 == targetEp1 && e2 == targetEp2)
                         {

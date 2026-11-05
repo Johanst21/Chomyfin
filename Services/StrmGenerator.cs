@@ -247,7 +247,7 @@ namespace Chomyfin.Services
 
                             if (consecutiveFailures >= MaxConsecutiveFailures)
                             {
-                                throw new InvalidOperationException($"[StrmGenerator] Abortando sincronización: se alcanzaron {consecutiveFailures} fallos consecutivos en llamadas a la API de Chomikuj.");
+                                throw new StrmGeneratorAbortException($"[StrmGenerator] Abortando sincronización: se alcanzaron {consecutiveFailures} fallos consecutivos en llamadas a la API de Chomikuj.");
                             }
                         }
 
@@ -309,7 +309,7 @@ namespace Chomyfin.Services
 
                                     if (consecutiveFailures >= MaxConsecutiveFailures)
                                     {
-                                        throw new InvalidOperationException($"[StrmGenerator] Abortando sincronización: se alcanzaron {consecutiveFailures} fallos consecutivos en llamadas a la API de Chomikuj.");
+                                        throw new StrmGeneratorAbortException($"[StrmGenerator] Abortando sincronización: se alcanzaron {consecutiveFailures} fallos consecutivos en llamadas a la API de Chomikuj.");
                                     }
                                     break;
                             }
@@ -318,7 +318,7 @@ namespace Chomyfin.Services
                         {
                             throw;
                         }
-                        catch (Exception ex) when (!(ex is InvalidOperationException && ex.Message.StartsWith("[StrmGenerator] Abortando")))
+                        catch (Exception ex) when (!(ex is StrmGeneratorAbortException))
                         {
                             downloadFailed++;
                             hadFolderError = true;
@@ -334,7 +334,7 @@ namespace Chomyfin.Services
 
                             if (consecutiveFailures >= MaxConsecutiveFailures)
                             {
-                                throw new InvalidOperationException($"[StrmGenerator] Abortando sincronización: se alcanzaron {consecutiveFailures} fallos consecutivos en llamadas a la API de Chomikuj.");
+                                throw new StrmGeneratorAbortException($"[StrmGenerator] Abortando sincronización: se alcanzaron {consecutiveFailures} fallos consecutivos en llamadas a la API de Chomikuj.");
                             }
                         }
 
@@ -865,7 +865,7 @@ namespace Chomyfin.Services
                 catch (Exception ex)
                 {
                     // No tragar silenciosamente
-                    Console.WriteLine($"Error limpiando {fullPath}: {ex}");
+                    logger?.Error("[StrmGenerator] Error limpiando huérfano {0}: {1}", fullPath, ex.ToString());
                 }
             }
 
@@ -911,5 +911,14 @@ namespace Chomyfin.Services
             Updated,
             Skipped
         }
+    }
+
+    /// <summary>
+    /// Excepción de control usada para abortar una sincronización de .strm
+    /// al superar el umbral de fallos consecutivos en llamadas a la API.
+    /// </summary>
+    public class StrmGeneratorAbortException : Exception
+    {
+        public StrmGeneratorAbortException(string message) : base(message) { }
     }
 }
