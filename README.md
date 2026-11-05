@@ -6,13 +6,13 @@
 
 <p align="center">
   <a href="https://www.gnu.org/licenses/gpl-3.0"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3"></a>
-  <a href="https://github.com/Johanst21/Chomyfin/releases/tag/v1.0.0.0"><img src="https://img.shields.io/badge/Release-v1.0.0.0-green.svg" alt="Release v1.0.0.0"></a>
+  <a href="https://github.com/Johanst21/Chomyfin/releases/tag/v1.0.1.0"><img src="https://img.shields.io/badge/Release-v1.0.1.0-green.svg" alt="Release v1.0.1.0"></a>
 </p>
 
 An Emby Server plugin (4.10.x) that integrates and manages content directly from Chomikuj.pl, allowing you to browse folders, synchronize `.strm` files, and stream media.
 
-**Status:** Version `v1.0.0.0` — Production Ready Release.  
-This stable release clears the remaining P2 technical debt (robust ID parsing, dedicated abort exception, per-instance diagnostics counter, Emby-logger based orphan cleanup) and adds reliable support for network shares (SMB/NFS) with a safe atomic-write fallback.
+**Status:** Version `v1.0.1.0` — Bug Fixes Release.  
+This release fixes episode sibling resolution (supports `1x01`, `T1E1`, `SxxExx`, and flat layouts, with deterministic ordering and no cross-series mixing) and improves orphan cleanup for `.original` files.
 
 ## Features
 *   **Chomikuj Integration:** Browse your Chomikuj account folders directly.
@@ -45,6 +45,7 @@ bin/Release/netstandard2.0/Chomyfin.dll
 4. Go to **Emby Admin Dashboard > Plugins** to verify and configure Chomyfin credentials and settings.
 
 ## Releases
+*   **Chomyfin v1.0.1.0**: https://github.com/Johanst21/Chomyfin/releases/tag/v1.0.1.0
 *   **Chomyfin v1.0.0.0**: https://github.com/Johanst21/Chomyfin/releases/tag/v1.0.0.0
 
 ## License
