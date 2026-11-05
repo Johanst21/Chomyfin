@@ -21,9 +21,10 @@ namespace Chomyfin.Services
     {
         private static readonly Regex BracketRegex = new Regex(@"\[.*?\]|\(.*?\)", RegexOptions.Compiled);
         private static readonly Regex YearRegex = new Regex(@"\b(19\d\d|20\d\d)\b", RegexOptions.Compiled);
-        private static readonly Regex SxxExxRegex = new Regex(@"[sS](?<season>\d{1,2})[eE](?<ep1>\d{2,3})(?:[eE](?<ep2>\d{2,3}))?", RegexOptions.Compiled);
+        private static readonly Regex SxxExxRegex = new Regex(@"(?:[sS](?<season>\d{1,2})[eE]|(?<season>\d{1,2})[xX]|[tT](?<season>\d{1,2})[eE])(?<ep1>\d{1,3})(?:[eE](?<ep2>\d{1,3}))?", RegexOptions.Compiled);
         private static readonly Regex SeparatorsRegex = new Regex(@"[._\-\+]+", RegexOptions.Compiled);
         private static readonly Regex MultiSpaceRegex = new Regex(@"\s+", RegexOptions.Compiled);
+        private static readonly Regex SeasonFolderRegex = new Regex(@"\b[sS][0-9]{1,2}\b|\b[0-9]{1,2}[xX]\b|\b[tT][0-9]{1,2}\b", RegexOptions.Compiled);
 
         private static readonly HashSet<string> QualityTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -74,7 +75,7 @@ namespace Chomyfin.Services
             }
 
             results.Remove(currentPath);
-            return results.Take(maxSiblings).ToList();
+            return results.OrderBy(r => r).Take(maxSiblings).ToList();
         }
 
         private void FindVideoSiblings(Video video, string currentPath, HashSet<string> results, int maxSiblings)
@@ -177,7 +178,10 @@ namespace Chomyfin.Services
 
             // 2. Respaldo por regex (SxxExx + nombre de serie)
             var sxxMatch = SxxExxRegex.Match(currentFileName);
-            if (!sxxMatch.Success) return;
+            // if (!sxxMatch.Success) return;
+            // Si el nombre del archivo actual no matchea, no nos rendimos:
+            // se salta la extracción por regex (el chequeo TryParse de abajo la omite)
+            // y el flujo continúa, ya que Emby podría tener el episodio indexado (paso 1).
 
             int season, ep1;
             if (!int.TryParse(sxxMatch.Groups["season"].Value, out season) ||
@@ -205,8 +209,10 @@ namespace Chomyfin.Services
             // Buscar en la misma carpeta del episodio
             ScanFolderForEpisodeSiblings(dir, season, ep1, ep2, currentPath, results, maxSiblings);
 
-            // Si todavía hay espacio, buscar en carpetas hermanas del mismo nivel (ej: otras temporadas o calidades de la misma serie)
-            if (results.Count < maxSiblings)
+            // Si todavía hay espacio, buscar en carpetas hermanas del mismo nivel (ej: otras temporadas o calidades de la misma serie).
+            // Solo si la carpeta actual parece una carpeta de temporada; en layouts planos la búsqueda
+            // queda limitada a la propia carpeta del episodio para evitar captar episodios de otras series.
+            if (results.Count < maxSiblings && LooksLikeSeasonFolder(Path.GetFileName(dir)))
             {
                 try
                 {
@@ -233,6 +239,13 @@ namespace Chomyfin.Services
         {
             try
             {
+                // Nombre de serie del archivo actual: nombre del archivo sin la porción SxxExx, normalizado
+                var currentName = Path.GetFileNameWithoutExtension(currentPath);
+                var currentSxxMatch = SxxExxRegex.Match(currentName);
+                var currentSeriesName = NormalizeMediaName(currentSxxMatch.Success
+                    ? currentName.Remove(currentSxxMatch.Index, currentSxxMatch.Length)
+                    : currentName, preserveYear: true);
+
                 var files = _fileSystem.GetFilePaths(folder);
                 foreach (var file in files)
                 {
@@ -264,6 +277,14 @@ namespace Chomyfin.Services
 
                         if (s == targetSeason && e1 == targetEp1 && e2 == targetEp2)
                         {
+                            // Comparar el nombre de serie (nombre sin la porción SxxExx, normalizado)
+                            // para evitar falsos positivos entre series distintas en layouts planos
+                            var seriesName = NormalizeMediaName(candidateName.Remove(match.Index, match.Length), preserveYear: true);
+                            if (!string.Equals(currentSeriesName, seriesName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                continue; // Serie distinta: se omite
+                            }
+
                             results.Add(file);
                         }
                     }
@@ -273,6 +294,18 @@ namespace Chomyfin.Services
             {
                 _logger.Warn("Chomyfin: error escaneando carpeta {0}: {1}", folder, ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Indica si el nombre de una carpeta parece corresponder a una temporada
+        /// (ej: "Season 1", "Temporada 2", "S01", "S1", "T01", "1x").
+        /// </summary>
+        private static bool LooksLikeSeasonFolder(string dirName)
+        {
+            if (string.IsNullOrWhiteSpace(dirName)) return false;
+            if (dirName.IndexOf("season", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (dirName.IndexOf("temporada", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return SeasonFolderRegex.IsMatch(dirName);
         }
 
         /// <summary>

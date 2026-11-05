@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.1.0] - 2026-11-05
+
+### Bug Fixes
+- Fixed episode sibling resolution (SxxExx regex, 1x01/T1E1 support, flat layout false positives, and deterministic ordering).
+
 ## [v1.0.0.0] - 2026-11-05
 
 ### Production Ready Release
