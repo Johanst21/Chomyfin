@@ -565,26 +565,30 @@ namespace Chomyfin.Services
                 ChomikFileInfo owner = null;
                 string existingUrl = null;
 
-                if (File.Exists(originalPath))
+                // Bloqueo compartido con AtomicFile para evitar leer archivos .original o .strm a medias si se están actualizando concurrentemente
+                using (AtomicFile.AcquireLock(fullStrmPath))
                 {
-                    try
+                    if (File.Exists(originalPath))
                     {
-                        existingUrl = File.ReadAllText(originalPath, Encoding.UTF8)?.Trim();
+                        try
+                        {
+                            existingUrl = File.ReadAllText(originalPath, Encoding.UTF8)?.Trim();
+                        }
+                        catch (Exception ex)
+                        {
+                            logger?.Debug("[StrmGenerator] Error leyendo {0}: {1}", originalPath, ex.ToString());
+                        }
                     }
-                    catch (Exception ex)
+                    else if (File.Exists(fullStrmPath))
                     {
-                        logger?.Debug("[StrmGenerator] Error leyendo {0}: {1}", originalPath, ex.ToString());
-                    }
-                }
-                else if (File.Exists(fullStrmPath))
-                {
-                    try
-                    {
-                        existingUrl = File.ReadAllText(fullStrmPath, Encoding.UTF8)?.Trim();
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.Debug("[StrmGenerator] Error leyendo {0}: {1}", fullStrmPath, ex.ToString());
+                        try
+                        {
+                            existingUrl = File.ReadAllText(fullStrmPath, Encoding.UTF8)?.Trim();
+                        }
+                        catch (Exception ex)
+                        {
+                            logger?.Debug("[StrmGenerator] Error leyendo {0}: {1}", fullStrmPath, ex.ToString());
+                        }
                     }
                 }
 
@@ -820,6 +824,35 @@ namespace Chomyfin.Services
                 }
             }
 
+            // También detectar archivos .original que hayan quedado huérfanos sin su .strm correspondiente
+            var originalFilesToDelete = new List<string>();
+            var allOriginals = Directory.GetFiles(destinationPath, "*.original", SearchOption.AllDirectories);
+            foreach (var orig in allOriginals)
+            {
+                var fullPath = Path.GetFullPath(orig);
+
+                bool withinScannedRoots = false;
+                for (int i = 0; i < normalizedRoots.Count; i++)
+                {
+                    if (fullPath.StartsWith(normalizedRoots[i], StringComparison.OrdinalIgnoreCase))
+                    {
+                        withinScannedRoots = true;
+                        break;
+                    }
+                }
+
+                if (!withinScannedRoots)
+                {
+                    continue;
+                }
+
+                var companionStrm = Path.ChangeExtension(fullPath, ".strm");
+                if (!File.Exists(companionStrm) || !validStrmFiles.Contains(companionStrm))
+                {
+                    originalFilesToDelete.Add(fullPath);
+                }
+            }
+
             if (orphansDryRun)
             {
                 logger?.Info("[ORPHANS-DRYRUN] Se eliminarían {0} .strm", filesToDelete.Count);
@@ -846,6 +879,21 @@ namespace Chomyfin.Services
                 {
                     // No tragar silenciosamente
                     logger?.Error("[StrmGenerator] Error limpiando huérfano {0}: {1}", fullPath, ex.ToString());
+                }
+            }
+
+            foreach (var origPath in originalFilesToDelete)
+            {
+                try
+                {
+                    if (File.Exists(origPath))
+                    {
+                        File.Delete(origPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.Error("[StrmGenerator] Error limpiando .original huérfano {0}: {1}", origPath, ex.ToString());
                 }
             }
 

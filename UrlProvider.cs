@@ -77,7 +77,7 @@ namespace Chomyfin
             }
 
             // 2. Encolar resolución de hermanos en segundo plano (fire-and-forget fuera del camino de reproducción)
-            Task.Run(() =>
+            _ = Task.Run(() =>
             {
                 try
                 {

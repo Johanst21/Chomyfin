@@ -3,10 +3,10 @@
     <!-- netstandard2.0: requisito obligatorio del portal de plugins de Emby.
          Las DLL netstandard2.1 son rechazadas. -->
     <TargetFramework>netstandard2.0</TargetFramework>
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
-    <FileVersion>1.0.1.0</FileVersion>
-    <Version>1.0.1.0</Version>
-    <InformationalVersion>1.0.1.0</InformationalVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Version>1.1.0.0</Version>
+    <InformationalVersion>1.1.0.0</InformationalVersion>
     <PackageTags>plugin</PackageTags>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <LangVersion>9.0</LangVersion>

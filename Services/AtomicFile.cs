@@ -24,6 +24,48 @@ namespace Chomyfin.Services
         private static int _lockAcquisitions = 0;
 
         /// <summary>
+        /// Adquiere síncronamente el cerrojo asociado a una ruta de archivo.
+        /// Incrementa el contador de referencias antes de esperar y devuelve un IDisposable que libera y decrementa.
+        /// </summary>
+        public static IDisposable AcquireLock(string path, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                throw new ArgumentNullException(nameof(path));
+            }
+
+            var key = Path.GetFullPath(path);
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                MaybeCleanupLocks();
+
+                var entry = _locks.GetOrAdd(key, _ => new LockEntry());
+                Interlocked.Increment(ref entry.RefCount);
+
+                try
+                {
+                    entry.Sem.Wait(cancellationToken);
+                }
+                catch
+                {
+                    Interlocked.Decrement(ref entry.RefCount);
+                    throw;
+                }
+
+                // Verificar si la entrada registrada sigue siendo exactamente esta instancia
+                if (_locks.TryGetValue(key, out var current) && ReferenceEquals(current, entry))
+                {
+                    return new LockReleaser(key, entry);
+                }
+
+                // Si fue retirada por MaybeCleanupLocks durante la espera, liberamos y reintentamos con la actual
+                entry.Sem.Release();
+                Interlocked.Decrement(ref entry.RefCount);
+            }
+        }
+
+        /// <summary>
         /// Adquiere asíncronamente el cerrojo asociado a una ruta de archivo.
         /// Incrementa el contador de referencias antes de esperar y devuelve un IDisposable que libera y decrementa.
         /// </summary>

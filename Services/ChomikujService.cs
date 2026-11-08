@@ -64,7 +64,7 @@ namespace Chomyfin
 
         private SemaphoreSlim _semaphore;
         private int _semaphoreMax = -1;
-        internal Action OnEnsureLoggedInForTests;
+        internal Action OnEnsureLoggedInForTests = null;
 
         // Backoff entre reintentos de login (credenciales inválidas / sitio caído):
         // evita martillear chomikuj.pl en cada intento de reproducción.

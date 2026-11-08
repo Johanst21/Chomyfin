@@ -114,6 +114,11 @@ namespace Chomyfin.Tests
             RunTest("12.4b UrlProvider: Excepción en FindSiblings se captura en log sin romper GetMediaSources", TestP1_8_12_4b_FindSiblingsThrows_CaughtAndLogged_GetMediaSourcesSucceeds);
             RunTest("12.5 SiblingResolutionQueue: purga de _cooldowns expira entradas antiguas", TestP1_8_12_5_CooldownPurge_EvictsExpiredEntries);
 
+            // 13. Pruebas de Regresión (v1.1.0.0)
+            RunTest("13.1 Regresión: TestSiblingFinder_Episode_RegexVariations (1x01, T1E1, S01E01)", TestSiblingFinder_Episode_RegexVariations);
+            RunTest("13.2 Regresión: TestSiblingFinder_Episode_FlatLayout (no mezcla series distintas con mismo episodio)", TestSiblingFinder_Episode_FlatLayout);
+            RunTest("13.3 Regresión: TestCleanOrphans_DeletesOrphanedOriginal (.original sin .strm es eliminado)", TestCleanOrphans_DeletesOrphanedOriginal);
+
             Console.WriteLine("\n===========================================");
             Console.WriteLine($"TOTAL PRUEBAS: {_passed + _failed} | PASADAS: {_passed} | FALLADAS: {_failed}");
             Console.WriteLine("===========================================");
@@ -1326,6 +1331,14 @@ namespace Chomyfin.Tests
                     AtomicFile.WriteAllText((string)args[0], (string)args[1]);
                     return Task.CompletedTask;
                 }
+                if (targetMethod.Name == "GetFilePaths")
+                {
+                    return Directory.GetFiles((string)args[0]);
+                }
+                if (targetMethod.Name == "GetDirectoryPaths")
+                {
+                    return Directory.GetDirectories((string)args[0]);
+                }
                 return null;
             }
 
@@ -2440,6 +2453,131 @@ namespace Chomyfin.Tests
             AssertEqual(1, queue.CooldownsForTests.Count, "Las entradas expiradas (>5 min) fueron purgadas; solo queda la reciente");
             AssertTrue(queue.CooldownsForTests.ContainsKey("/path/recent.strm"), "La entrada reciente se conserva intacta");
         }
+
+        #region 13. Regression Tests v1.1.0.0
+
+        static void TestSiblingFinder_Episode_RegexVariations()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_test_regex_var_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var ep1 = Path.Combine(tempDir, "ShowName.S01E01.1080p.strm");
+                var ep2 = Path.Combine(tempDir, "ShowName.1x01.720p.strm");
+                var ep3 = Path.Combine(tempDir, "ShowName.T1E1.4k.strm");
+                var epDifferent = Path.Combine(tempDir, "ShowName.S01E02.1080p.strm");
+
+                File.WriteAllText(ep1, "dummy");
+                File.WriteAllText(ep2, "dummy");
+                File.WriteAllText(ep3, "dummy");
+                File.WriteAllText(epDifferent, "dummy");
+
+                var fs = FakeFileSystemProxy.Create();
+                var logger = new TestLogger();
+                var finder = new SiblingFinder(logger, fs, null);
+
+                var item = new MediaBrowser.Controller.Entities.TV.Episode { Path = ep1 };
+                var siblings = finder.FindSiblings(item, 10);
+
+                AssertEqual(2, siblings.Count, "Debe encontrar exactamente 2 hermanos para S01E01 (1x01 y T1E1)");
+                AssertTrue(siblings.Contains(ep2), "Debe incluir la variante 1x01");
+                AssertTrue(siblings.Contains(ep3), "Debe incluir la variante T1E1");
+                AssertFalse(siblings.Contains(epDifferent), "NO debe incluir episodios distintos (S01E02)");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestSiblingFinder_Episode_FlatLayout()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_test_flat_layout_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var breakingBad1080 = Path.Combine(tempDir, "Breaking.Bad.S01E01.1080p.strm");
+                var breakingBad720 = Path.Combine(tempDir, "Breaking.Bad.S01E01.720p.strm");
+                var gameOfThrones1080 = Path.Combine(tempDir, "Game.Of.Thrones.S01E01.1080p.strm");
+
+                File.WriteAllText(breakingBad1080, "dummy");
+                File.WriteAllText(breakingBad720, "dummy");
+                File.WriteAllText(gameOfThrones1080, "dummy");
+
+                var fs = FakeFileSystemProxy.Create();
+                var logger = new TestLogger();
+                var finder = new SiblingFinder(logger, fs, null);
+
+                var item = new MediaBrowser.Controller.Entities.TV.Episode { Path = breakingBad1080 };
+                var siblings = finder.FindSiblings(item, 10);
+
+                AssertEqual(1, siblings.Count, "Debe encontrar exactamente 1 hermano en layout plano");
+                AssertTrue(siblings.Contains(breakingBad720), "Debe incluir el hermano de la misma serie (Breaking Bad)");
+                AssertFalse(siblings.Contains(gameOfThrones1080), "NO debe incluir episodios de series distintas con el mismo S01E01 (Game of Thrones)");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        static void TestCleanOrphans_DeletesOrphanedOriginal()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_test_clean_orphans_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var strmPath = Path.Combine(tempDir, "Keep.strm");
+                var originalKeepPath = Path.Combine(tempDir, "Keep.original");
+                var orphanedOriginalPath = Path.Combine(tempDir, "Orphan.original");
+                var orphanedStrmPath = Path.Combine(tempDir, "OrphanStrm.strm");
+                var orphanedStrmOriginalPath = Path.Combine(tempDir, "OrphanStrm.original");
+
+                File.WriteAllText(strmPath, "https://chomikuj.pl/user/Keep,111.mkv");
+                File.WriteAllText(originalKeepPath, "https://chomikuj.pl/user/Keep,111.mkv");
+                File.WriteAllText(orphanedOriginalPath, "https://chomikuj.pl/user/Orphan,222.mkv");
+                File.WriteAllText(orphanedStrmPath, "https://chomikuj.pl/user/OrphanStrm,333.mkv");
+                File.WriteAllText(orphanedStrmOriginalPath, "https://chomikuj.pl/user/OrphanStrm,333.mkv");
+
+                var testLogger = new TestLogger();
+                var fakeClient = new FakeChomikBoxClient
+                {
+                    OnGetSubfolders = (parentId, path) => new List<ChomikFolderInfo>(),
+                    OnGetFilesInFolder = (folderId, path) =>
+                    {
+                        return FolderFilesResult.CreateFiles(new List<ChomikFileInfo>
+                        {
+                            new ChomikFileInfo("111", "Keep.mkv", "/Keep.mkv", 100)
+                        });
+                    }
+                };
+
+                var options = new StrmGeneratorOptions
+                {
+                    Username = "user",
+                    Password = "pwd",
+                    DestinationPath = tempDir,
+                    DeleteOrphans = true,
+                    OrphansDryRun = false
+                };
+
+                var generator = new StrmGenerator(testLogger, opt => fakeClient);
+                var result = generator.GenerateAsync(options).Result;
+
+                AssertTrue(result.Success, "Sincronización exitosa");
+                AssertTrue(File.Exists(strmPath), "Keep.strm se mantiene");
+                AssertTrue(File.Exists(originalKeepPath), "Keep.original se mantiene");
+                AssertFalse(File.Exists(orphanedStrmPath), "OrphanStrm.strm huérfano se elimina");
+                AssertFalse(File.Exists(orphanedStrmOriginalPath), "OrphanStrm.original se elimina junto con su strm");
+                AssertFalse(File.Exists(orphanedOriginalPath), "Orphan.original solitario (sin su .strm) debe ser detectado y eliminado");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        #endregion
 
         #endregion
         #endregion

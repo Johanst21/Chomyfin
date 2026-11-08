@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.1.0.0] - 2026-11-08
+
+### Quality Improvements
+- Code quality improvements, 0 compiler warnings, thread-safe AssignStrmFileNames, and 3 new regression tests.
+
 ## [v1.0.1.0] - 2026-11-05
 
 ### Bug Fixes
