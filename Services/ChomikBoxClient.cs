@@ -476,7 +476,7 @@ namespace Chomyfin.Services
                         _logger?.Error("[ChomikBoxClient] SOAP Fault recibido en {0}: {1}", action, sanitizedFault);
                         if (_enableSoapDiagnostics)
                         {
-                            throw new InvalidOperationException($"SOAP Fault en {action}: {faultString}");
+                            throw new InvalidOperationException($"SOAP Fault en {action}: {sanitizedFault}");
                         }
                     }
                 }

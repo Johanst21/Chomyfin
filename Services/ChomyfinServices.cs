@@ -36,15 +36,22 @@ namespace Chomyfin.Services
         {
             Logger = logger;
             OptionsAccessor = optionsAccessor;
+
+            (ChomikujService as IDisposable)?.Dispose();
             ChomikujService = new ChomikujService(logger, optionsAccessor);
+
             if (fileSystem != null)
             {
+                (StrmCacheService as IDisposable)?.Dispose();
                 StrmCacheService = new StrmCacheService(logger, fileSystem, () => ChomikujService);
             }
             if (fileSystem != null)
             {
+                (SiblingFinder as IDisposable)?.Dispose();
                 SiblingFinder = new SiblingFinder(logger, fileSystem, libraryManager);
             }
+
+            (SiblingResolutionQueue as IDisposable)?.Dispose();
             SiblingResolutionQueue = new SiblingResolutionQueue(logger, () => StrmCacheService, () => ChomikujService);
             PluginDataPath = pluginDataPath;
         }

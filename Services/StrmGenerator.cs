@@ -240,11 +240,6 @@ namespace Chomyfin.Services
                             _logger?.Error("[StrmGenerator] {0}", err);
                             result.AddError(err);
 
-                            if (options.EnableSoapDiagnostics)
-                            {
-                                throw;
-                            }
-
                             if (consecutiveFailures >= MaxConsecutiveFailures)
                             {
                                 throw new StrmGeneratorAbortException($"[StrmGenerator] Abortando sincronización: se alcanzaron {consecutiveFailures} fallos consecutivos en llamadas a la API de Chomikuj.");
@@ -298,14 +293,8 @@ namespace Chomyfin.Services
                                     hadFolderError = true;
                                     consecutiveFailures++;
                                     var err = $"Fallo obteniendo archivos de '{currentFolder.Path}' (Id={currentFolder.Id}, pathId='{encodedPathId}'): {filesResult.ErrorMessage}";
-                                    _logger?.Warn("[StrmGenerator] {0}", err);
+                                    _logger?.Error("[StrmGenerator] {0}", err);
                                     result.AddError(err);
-
-                                    // Fallar rápido ante Failed (nunca ante EmptyFolder)
-                                    if (options.EnableSoapDiagnostics)
-                                    {
-                                        throw new InvalidOperationException(err);
-                                    }
 
                                     if (consecutiveFailures >= MaxConsecutiveFailures)
                                     {
@@ -326,11 +315,6 @@ namespace Chomyfin.Services
                             var err = $"Excepción obteniendo archivos de '{currentFolder.Path}' (Id={currentFolder.Id}, pathId='{encodedPathId}'): {ex.Message}";
                             _logger?.Error("[StrmGenerator] {0}", err);
                             result.AddError(err);
-
-                            if (options.EnableSoapDiagnostics)
-                            {
-                                throw;
-                            }
 
                             if (consecutiveFailures >= MaxConsecutiveFailures)
                             {
@@ -429,10 +413,6 @@ namespace Chomyfin.Services
                             var err = $"Error generando .strm para {file.Path}: {ex.ToString()}";
                             _logger?.Error("[StrmGenerator] {0}", err);
                             result.AddError(err);
-                            if (options.EnableSoapDiagnostics)
-                            {
-                                throw;
-                            }
                         }
 
                         if ((i + 1) % 10 == 0 || i == discoveredFiles.Count - 1)

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml;
 using System.Xml.Linq;
 using Chomyfin.Models;
+using MediaBrowser.Model.Logging;
 
 namespace Chomyfin.Services
 {
@@ -62,6 +64,8 @@ namespace Chomyfin.Services
     public static class SoapResponseParser
     {
         public const string EmptyFolderErrorMessage = "failed : requested file(s) not available";
+
+        public static ILogger Logger { get; set; }
 
         /// <summary>
         /// Combina rutas normalizadas con barras inclinadas hacia adelante.
@@ -173,8 +177,16 @@ namespace Chomyfin.Services
 
                 return null;
             }
-            catch
+            catch (XmlException ex)
             {
+                var logger = Logger ?? ChomyfinServices.Logger;
+                logger?.Warn("[SoapResponseParser] XmlException al parsear XML para {0}: {1}", actionName, ex.Message);
+                return null;
+            }
+            catch (FormatException ex)
+            {
+                var logger = Logger ?? ChomyfinServices.Logger;
+                logger?.Warn("[SoapResponseParser] FormatException al parsear XML para {0}: {1}", actionName, ex.Message);
                 return null;
             }
         }

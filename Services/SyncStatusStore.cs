@@ -12,8 +12,25 @@ namespace Chomyfin.Services
     public class SyncStatusStore
     {
         private readonly object _syncLock = new object();
+        private bool _isRunning;
 
-        public bool IsRunning { get; private set; }
+        public bool IsRunning
+        {
+            get
+            {
+                lock (_syncLock)
+                {
+                    return _isRunning;
+                }
+            }
+            private set
+            {
+                lock (_syncLock)
+                {
+                    _isRunning = value;
+                }
+            }
+        }
         public DateTime? LastStartTimeUtc { get; private set; }
         public DateTime? LastEndTimeUtc { get; private set; }
         public bool? LastSuccess { get; private set; }
