@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://www.gnu.org/licenses/gpl-3.0"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3"></a>
-  <a href="https://github.com/Johanst21/Chomyfin/releases/tag/v1.1.0.0"><img src="https://img.shields.io/badge/Release-v1.1.0.0-green.svg" alt="Release v1.1.0.0"></a>
+  <a href="https://github.com/Johanst21/Chomyfin/releases"><img src="https://img.shields.io/github/v/release/Johanst21/Chomyfin?color=green" alt="Latest Release"></a>
 </p>
 
 An Emby Server plugin (4.10.x) that integrates and manages content directly from Chomikuj.pl, allowing you to browse folders, synchronize `.strm` files, and stream media.
@@ -50,9 +50,8 @@ dotnet run --project Chomyfin.Tests/Chomyfin.Tests.csproj
 4. Go to **Emby Admin Dashboard > Plugins** to verify and configure Chomyfin credentials and settings.
 
 ## Releases
-*   **Chomyfin v1.1.0.0**: https://github.com/Johanst21/Chomyfin/releases/tag/v1.1.0.0
-*   **Chomyfin v1.0.1.0**: https://github.com/Johanst21/Chomyfin/releases/tag/v1.0.1.0
-*   **Chomyfin v1.0.0.0**: https://github.com/Johanst21/Chomyfin/releases/tag/v1.0.0.0
+All releases and binary downloads are available at:
+https://github.com/Johanst21/Chomyfin/releases
 
 ## License
 This project is licensed under the terms of the GNU General Public License v3.0 (GPL-3.0). See the [LICENSE](LICENSE) file for the full license text.
