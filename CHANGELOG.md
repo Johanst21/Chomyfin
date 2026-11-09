@@ -6,8 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **Resolve Only First Link**: New option to resolve only the direct URL of the opened item, ignoring sibling versions and slow paths for faster start.
-- **Configurable Concurrency Limit**: Added `EnableMaxConcurrentResolutions` and expanded `MaxConcurrentResolutions` range to 1-20.
-- **UI Reordering**: Reorganized settings logical sections: Credentials, Storage, Playback, Cleanup, and Status.
+- **Configurable Sibling Limit**: Added `EnableSiblingLimit` toggle and customizable `MaxSiblingsPerOpen` (1-20) for background quality discovery.
+- **Configurable Concurrency Limit**: Added `EnableMaxConcurrentResolutions` and expanded `MaxConcurrentResolutions` range to 1-20 to prevent rate-limiting from Chomikuj.
+- **Fast Resolution Path**: Made opt-in (`false` by default) with automatic fallback to classic method on failure.
+- **UI Overhaul & Cleanup**: Reorganized settings into logical sections (Credentials, Storage, Playback, Cleanup, and Status) and hid `UseFastResolvePath` alias from the UI via `[Browsable(false)]`.
 - **Tests**: Added tests for `ResolveOnlyFirstLink` and configurable concurrency limit (74/74 passing).
 
 ## [v1.1.0.0] - 2026-11-08
