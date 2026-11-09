@@ -14,28 +14,36 @@ namespace Chomyfin.Configuration
     {
         public ChomyfinOptions()
         {
-            MaxConcurrentResolutions = 3;
+            // 1. Credenciales
+            Username = string.Empty;
+            Password = string.Empty;
+            FolderPassword = string.Empty;
             EnableCookieCache = true;
             CookieCacheDurationMinutes = 30;
 
-            // Valores por defecto Tarea 2
+            // 2. Almacenamiento
+            StrmDestinationFolder = string.Empty;
             SyncMode = StrmSyncMode.FullAccount;
             CustomScanPath = string.Empty;
             AllowedVideoExtensions = "mkv,mp4,avi,m4v,mov,wmv,ts,mpg,mpeg,flv,webm";
             OverwritePolicy = StrmOverwritePolicy.SkipIfExists;
-            DeleteOrphans = false;
-            OrphansDryRun = true;
             AutoSyncEnabled = false;
             RefreshLibraryAfterSync = false;
             EnableSoapDiagnostics = false;
 
-            // Opciones Tarea 1: Versiones hermanas
+            // 3. Reproducción
+            FastResolutionPath = true;
             ResolveSiblingVersions = true;
             MaxSiblingsPerOpen = 8;
+            ResolveOnlyFirstLink = false;
+            EnableMaxConcurrentResolutions = true;
+            MaxConcurrentResolutions = 3;
 
-            // Mejora 3: Vía rápida de resolución
-            UseFastResolvePath = true;
+            // 4. Limpieza
+            DeleteOrphans = false;
+            OrphansDryRun = true;
 
+            // 5. Estado
             LastSyncStatus = ChomyfinServices.SyncStatusStore?.GetSummaryString() ?? "No synchronization has been run yet.";
         }
 
@@ -43,7 +51,7 @@ namespace Chomyfin.Configuration
 
         public override string EditorDescription => "Configure Chomikuj.pl access, .strm file synchronization, and advanced settings.";
 
-        // --- Credenciales y acceso web ---
+        // --- 1. Credenciales ---
 
         [DisplayName("Chomikuj Username")]
         [Description("Your Chomikuj username or email address.")]
@@ -59,7 +67,15 @@ namespace Chomyfin.Configuration
         [IsPassword]
         public string FolderPassword { get; set; }
 
-        // --- Generación y sincronización de .strm (Tarea 2) ---
+        [DisplayName("Enable Cookie Cache")]
+        [Description("Maintains an active Chomikuj.pl session to avoid repeated logins.")]
+        public bool EnableCookieCache { get; set; }
+
+        [DisplayName("Cookie Cache Duration (Minutes)")]
+        [Description("Session expiration time in minutes.")]
+        public int CookieCacheDurationMinutes { get; set; }
+
+        // --- 2. Almacenamiento ---
 
         [DisplayName("STRM Destination Folder")]
         [Description("Local directory on the server where the .strm library will be generated.")]
@@ -82,14 +98,6 @@ namespace Chomyfin.Configuration
         [Description("Skip if the .strm file already exists (recommended) or update if the Chomikuj file URL has changed.")]
         public StrmOverwritePolicy OverwritePolicy { get; set; }
 
-        [DisplayName("Delete Orphans")]
-        [Description("If enabled, .strm files in the destination folder that are no longer present on Chomikuj will be deleted.")]
-        public bool DeleteOrphans { get; set; }
-
-        [DisplayName("Orphans: Dry Run Only")]
-        [Description("While enabled, only logs which orphan .strm files would be deleted without removing them from disk.")]
-        public bool OrphansDryRun { get; set; }
-
         [DisplayName("Enable Automatic Scheduled Sync")]
         [Description("Enables recurring automatic execution of the sync task. If disabled, you can always run sync manually from Emby Scheduled Tasks.")]
         public bool AutoSyncEnabled { get; set; }
@@ -102,21 +110,17 @@ namespace Chomyfin.Configuration
         [Description("Logs raw XML from the SOAP API; for debugging purposes only.")]
         public bool EnableSoapDiagnostics { get; set; }
 
-        // --- Rendimiento y caché ---
+        // --- 3. Reproducción ---
 
-        [DisplayName("Max Concurrent Resolutions")]
-        [Description("Maximum number of simultaneous downloads or resolutions (1-10).")]
-        public int MaxConcurrentResolutions { get; set; }
+        [DisplayName("Fast Resolution Path")]
+        [Description("Fast resolution path: uses a single request when the URL already contains the file id; falls back to the classic method if it fails.")]
+        public bool FastResolutionPath { get; set; }
 
-        [DisplayName("Enable Cookie Cache")]
-        [Description("Maintains an active Chomikuj.pl session to avoid repeated logins.")]
-        public bool EnableCookieCache { get; set; }
-
-        [DisplayName("Cookie Cache Duration (Minutes)")]
-        [Description("Session expiration time in minutes.")]
-        public int CookieCacheDurationMinutes { get; set; }
-
-        // --- Versiones hermanas (Tarea 1) ---
+        public bool UseFastResolvePath
+        {
+            get => FastResolutionPath;
+            set => FastResolutionPath = value;
+        }
 
         [DisplayName("Resolve Sibling Versions on Open")]
         [Description("When opening a movie or episode detail, resolves and caches alternative qualities in the background for instant playback.")]
@@ -126,11 +130,29 @@ namespace Chomyfin.Configuration
         [Description("Maximum number of alternative .strm files queued for background resolution on open (1-20).")]
         public int MaxSiblingsPerOpen { get; set; }
 
-        // --- Mejora 3: Vía rápida de resolución ---
+        [DisplayName("Resolve Only First Link")]
+        [Description("If enabled, the plugin will only resolve the direct URL of the opened item and will ignore resolving sibling versions or slow paths.")]
+        public bool ResolveOnlyFirstLink { get; set; } = false;
 
-        [DisplayName("Fast Resolution Path")]
-        [Description("Fast resolution path: uses a single request when the URL already contains the file id; falls back to the classic method if it fails.")]
-        public bool UseFastResolvePath { get; set; }
+        [DisplayName("Enable Concurrency Limit")]
+        [Description("Limits the number of simultaneous URL resolutions to prevent rate-limiting from Chomikuj.")]
+        public bool EnableMaxConcurrentResolutions { get; set; } = true;
+
+        [DisplayName("Max Concurrent Resolutions (1-20)")]
+        [Description("Maximum number of simultaneous resolution requests allowed when the limit is enabled.")]
+        [MinValue(1)]
+        [MaxValue(20)]
+        public int MaxConcurrentResolutions { get; set; }
+
+        // --- 4. Limpieza ---
+
+        [DisplayName("Delete Orphans")]
+        [Description("If enabled, .strm files in the destination folder that are no longer present on Chomikuj will be deleted.")]
+        public bool DeleteOrphans { get; set; }
+
+        [DisplayName("Orphans: Dry Run Only")]
+        [Description("While enabled, only logs which orphan .strm files would be deleted without removing them from disk.")]
+        public bool OrphansDryRun { get; set; }
 
         public List<string> GetSelectedFoldersList()
         {
@@ -167,7 +189,7 @@ namespace Chomyfin.Configuration
         public bool SanitizeAndValidate(out string error)
         {
             if (MaxConcurrentResolutions < 1) MaxConcurrentResolutions = 1;
-            if (MaxConcurrentResolutions > 10) MaxConcurrentResolutions = 10;
+            if (MaxConcurrentResolutions > 20) MaxConcurrentResolutions = 20;
             if (CookieCacheDurationMinutes < 1) CookieCacheDurationMinutes = 1;
 
             if (MaxSiblingsPerOpen < 1) MaxSiblingsPerOpen = 1;

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.2.0.0] - 2026-11-09
+
+### Added
+- **Resolve Only First Link**: New option to resolve only the direct URL of the opened item, ignoring sibling versions and slow paths for faster start.
+- **Configurable Concurrency Limit**: Added `EnableMaxConcurrentResolutions` and expanded `MaxConcurrentResolutions` range to 1-20.
+- **UI Reordering**: Reorganized settings logical sections: Credentials, Storage, Playback, Cleanup, and Status.
+- **Tests**: Added tests for `ResolveOnlyFirstLink` and configurable concurrency limit (74/74 passing).
+
 ## [v1.1.0.0] - 2026-11-08
 
 ### Quality Improvements

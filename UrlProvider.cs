@@ -77,11 +77,17 @@ namespace Chomyfin
             }
 
             // 2. Encolar resolución de hermanos en segundo plano (fire-and-forget fuera del camino de reproducción)
+            // Si ResolveOnlyFirstLink está activado, se ignoran los hermanos.
             _ = Task.Run(() =>
             {
                 try
                 {
                     var options = ChomyfinServices.OptionsAccessor?.Invoke();
+                    if (options != null && options.ResolveOnlyFirstLink)
+                    {
+                        return;
+                    }
+
                     if (options != null && options.ResolveSiblingVersions)
                     {
                         var finder = ChomyfinServices.SiblingFinder;

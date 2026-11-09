@@ -297,9 +297,19 @@ namespace Chomyfin
         private SemaphoreSlim GetCurrentSemaphore()
         {
             var options = SafeGetOptions();
-            int max = options?.MaxConcurrentResolutions ?? 3;
-            if (max < 1) max = 1;
-            if (max > 10) max = 10;
+            bool enableLimit = options?.EnableMaxConcurrentResolutions ?? true;
+            int max;
+            if (!enableLimit)
+            {
+                // Si la concurrencia está deshabilitada, permitimos un límite alto (sin restricción práctica)
+                max = 1000;
+            }
+            else
+            {
+                max = options?.MaxConcurrentResolutions ?? 3;
+                if (max < 1) max = 1;
+                if (max > 20) max = 20;
+            }
 
             lock (_stateLock)
             {
@@ -329,7 +339,7 @@ namespace Chomyfin
             try
             {
                 var options = SafeGetOptions();
-                bool useFastPath = options?.UseFastResolvePath ?? true;
+                bool useFastPath = options?.FastResolutionPath ?? true;
                 string postLoginToken = _postLoginToken;
                 string folderPrefix = GetFolderPrefix(pageUrl);
 
@@ -352,6 +362,12 @@ namespace Chomyfin
                     }
 
                     _logger.Debug("Chomyfin: vía rápida no resolvió para {0}. Cayendo a vía lenta.", pageUrl);
+                }
+
+                if (options != null && options.ResolveOnlyFirstLink)
+                {
+                    _logger.Debug("Chomyfin: ResolveOnlyFirstLink activo; se ignora la vía lenta para {0}.", pageUrl);
+                    return null;
                 }
 
                 var slowResult = await ResolveSlowPathWithStatusAsync(pageUrl, ct).ConfigureAwait(false);

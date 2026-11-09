@@ -119,6 +119,10 @@ namespace Chomyfin.Tests
             RunTest("13.2 Regresión: TestSiblingFinder_Episode_FlatLayout (no mezcla series distintas con mismo episodio)", TestSiblingFinder_Episode_FlatLayout);
             RunTest("13.3 Regresión: TestCleanOrphans_DeletesOrphanedOriginal (.original sin .strm es eliminado)", TestCleanOrphans_DeletesOrphanedOriginal);
 
+            // 14. Pruebas v1.2.0.0 (ResolveOnlyFirstLink y Límite de Concurrencia Configurable)
+            RunTest("14.1 ResolveOnlyFirstLink: TestResolveOnlyFirstLink_SkipsSiblings", TestResolveOnlyFirstLink_SkipsSiblings);
+            RunTest("14.2 ConcurrencyLimit: TestConcurrencyLimit_Disabled", TestConcurrencyLimit_Disabled);
+
             Console.WriteLine("\n===========================================");
             Console.WriteLine($"TOTAL PRUEBAS: {_passed + _failed} | PASADAS: {_passed} | FALLADAS: {_failed}");
             Console.WriteLine("===========================================");
@@ -2576,6 +2580,131 @@ namespace Chomyfin.Tests
                 try { Directory.Delete(tempDir, true); } catch { }
             }
         }
+
+        #region 14. Pruebas v1.2.0.0
+
+        static void TestResolveOnlyFirstLink_SkipsSiblings()
+        {
+            var logger = new TestLogger();
+            var logManager = FakeLogManagerProxy.Create(logger);
+            var fs = FakeFileSystemProxy.Create();
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "cf_test_firstlink_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                var mainStrm = Path.Combine(tempDir, "Movie.strm");
+                var mainOrig = Path.Combine(tempDir, "Movie.original");
+                File.WriteAllText(mainStrm, "https://s123.chomikuj.pl/movie.mkv");
+                File.WriteAllText(mainOrig, "https://chomikuj.pl/user/Movie,123.mkv");
+
+                var options = new Configuration.ChomyfinOptions
+                {
+                    Username = "user",
+                    Password = "pwd",
+                    ResolveSiblingVersions = true,
+                    MaxSiblingsPerOpen = 5,
+                    ResolveOnlyFirstLink = true
+                };
+
+                ChomyfinServices.Initialize(logger, () => options, fs, null);
+
+                // Si se intentara resolver hermanos llamando a SiblingFinder, este tiraría excepción
+                ChomyfinServices.SiblingFinder = new FakeSiblingFinderThrows(logger);
+
+                var provider = new UrlProvider(logManager, fs);
+                var item = new FakeVideoItem { Path = mainStrm };
+
+                var sources = provider.GetMediaSources(item, CancellationToken.None).GetAwaiter().GetResult();
+
+                // Esperamos un momento para asegurar que el Task.Run no invoca SiblingFinder
+                Thread.Sleep(200);
+
+                AssertEqual(1, sources.Count, "Devuelve 1 MediaSourceInfo para el ítem principal");
+                AssertEqual("https://s123.chomikuj.pl/movie.mkv", sources[0].Path, "Path del MediaSourceInfo coincide");
+                AssertFalse(logger.Logs.Any(l => l.Contains("Fallo inducido en SiblingFinder")), "SiblingFinder no debió ser llamado porque ResolveOnlyFirstLink es true");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+                ChomyfinServices.ResetForTests();
+            }
+        }
+
+        static void TestConcurrencyLimit_Disabled()
+        {
+            var logger = new TestLogger();
+            int concurrentCount = 0;
+            int maxObservedConcurrent = 0;
+            var barrier = new ManualResetEventSlim(false);
+
+            var mockHandler = new MockHttpMessageHandler
+            {
+                SendAsyncFunc = (req, ct) =>
+                {
+                    var uri = req.RequestUri.ToString();
+                    if (uri.Contains("/action/Login/Login"))
+                    {
+                        var resp = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                        {
+                            Content = new System.Net.Http.StringContent("{\"LoggedIn\":true}")
+                        };
+                        resp.Headers.Add("Set-Cookie", "rememberMe=tok; Path=/; Domain=chomikuj.pl");
+                        return resp;
+                    }
+
+                    int current = Interlocked.Increment(ref concurrentCount);
+                    lock (barrier)
+                    {
+                        if (current > maxObservedConcurrent)
+                        {
+                            maxObservedConcurrent = current;
+                        }
+                    }
+
+                    // Esperamos a que todas las tareas concurrentes estén dentro antes de continuar
+                    if (current >= 12)
+                    {
+                        barrier.Set();
+                    }
+                    else
+                    {
+                        barrier.Wait(3000);
+                    }
+
+                    Interlocked.Decrement(ref concurrentCount);
+
+                    return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new System.Net.Http.StringContent("<input name=\"__RequestVerificationToken\" value=\"tok\" /><div data-file-id=\"123456\"></div>")
+                    };
+                }
+            };
+
+            var options = new Configuration.ChomyfinOptions
+            {
+                Username = "user",
+                Password = "pwd",
+                EnableCookieCache = true,
+                FastResolutionPath = false,
+                EnableMaxConcurrentResolutions = false,
+                MaxConcurrentResolutions = 3
+            };
+
+            using var service = new ChomikujService(logger, () => options, mockHandler);
+
+            var tasks = new List<Task<string>>();
+            for (int i = 0; i < 12; i++)
+            {
+                tasks.Add(Task.Run(() => service.ResolveUrlAsync($"https://chomikuj.pl/user/file,{i + 1000}.mkv", CancellationToken.None)));
+            }
+
+            Task.WaitAll(tasks.ToArray());
+
+            AssertTrue(maxObservedConcurrent > 8, $"Con EnableMaxConcurrentResolutions=false se observó concurrencia de {maxObservedConcurrent} (> 8)");
+        }
+
+        #endregion
 
         #endregion
 
