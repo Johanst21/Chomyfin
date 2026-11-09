@@ -32,8 +32,9 @@ namespace Chomyfin.Configuration
             EnableSoapDiagnostics = false;
 
             // 3. Reproducción
-            FastResolutionPath = true;
+            FastResolutionPath = false;
             ResolveSiblingVersions = true;
+            EnableSiblingLimit = true;
             MaxSiblingsPerOpen = 8;
             ResolveOnlyFirstLink = false;
             EnableMaxConcurrentResolutions = true;
@@ -113,8 +114,8 @@ namespace Chomyfin.Configuration
         // --- 3. Reproducción ---
 
         [DisplayName("Fast Resolution Path")]
-        [Description("Fast resolution path: uses a single request when the URL already contains the file id; falls back to the classic method if it fails.")]
-        public bool FastResolutionPath { get; set; }
+        [Description("Uses a direct fast-path resolution when the URL already contains the file ID. Falls back to the classic method if it fails.")]
+        public bool FastResolutionPath { get; set; } = false;
 
         public bool UseFastResolvePath
         {
@@ -125,6 +126,10 @@ namespace Chomyfin.Configuration
         [DisplayName("Resolve Sibling Versions on Open")]
         [Description("When opening a movie or episode detail, resolves and caches alternative qualities in the background for instant playback.")]
         public bool ResolveSiblingVersions { get; set; }
+
+        [DisplayName("Enable Sibling Limit")]
+        [Description("If enabled, limits the number of alternative versions resolved per item based on the value below.")]
+        public bool EnableSiblingLimit { get; set; } = true;
 
         [DisplayName("Sibling Versions Limit per Open")]
         [Description("Maximum number of alternative .strm files queued for background resolution on open (1-20).")]

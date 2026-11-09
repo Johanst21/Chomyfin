@@ -95,7 +95,8 @@ namespace Chomyfin
 
                         if (finder != null && queue != null)
                         {
-                            var siblings = finder.FindSiblings(item, options.MaxSiblingsPerOpen);
+                            int maxSiblings = options.EnableSiblingLimit ? options.MaxSiblingsPerOpen : 100;
+                            var siblings = finder.FindSiblings(item, maxSiblings);
                             if (siblings != null && siblings.Count > 0)
                             {
                                 queue.EnqueueSiblings(siblings, item.Path);
