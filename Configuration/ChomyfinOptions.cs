@@ -117,6 +117,7 @@ namespace Chomyfin.Configuration
         [Description("Uses a direct fast-path resolution when the URL already contains the file ID. Falls back to the classic method if it fails.")]
         public bool FastResolutionPath { get; set; } = false;
 
+        [Browsable(false)]
         public bool UseFastResolvePath
         {
             get => FastResolutionPath;
